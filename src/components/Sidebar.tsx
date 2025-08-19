@@ -34,7 +34,7 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange }:
   };
 
   const navItems = [
-    { id: 'chat', label: 'AI Chat', icon: MessageSquare, badge: 'New' },
+    { id: 'chat', label: 'AI Chat', icon: MessageSquare },
     { id: 'campaigns', label: 'Campaigns', icon: Target },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: Settings },
