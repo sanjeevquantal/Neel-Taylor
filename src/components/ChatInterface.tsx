@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,11 +9,32 @@ import {
   Bot, 
   User, 
   Sparkles, 
-  Download,
-  Copy,
-  ThumbsUp,
-  ThumbsDown
+  Upload,
+  FileText
 } from "lucide-react";
+
+// Simple markdown parser for basic formatting
+const parseMarkdown = (text: string) => {
+  return text
+    // Bold text: **text** -> <strong>text</strong>
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    // Italic text: *text* -> <em>text</em>
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    // Code: `text` -> <code>text</code>
+    .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-xs">$1</code>')
+    // Links: [text](url) -> <a href="url">text</a>
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Line breaks: \n -> <br>
+    .replace(/\n/g, '<br>')
+    // Headers: # text -> <h3>text</h3>
+    .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold mt-2 mb-1">$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold mt-3 mb-2">$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-4 mb-3">$1</h1>')
+    // Lists: - item -> <li>item</li>
+    .replace(/^- (.*$)/gim, '<li class="ml-4">$1</li>')
+    // Wrap lists in <ul> tags
+    .replace(/(<li.*<\/li>)/g, '<ul class="list-disc ml-4 my-2">$1</ul>');
+};
 
 interface Message {
   id: string;
@@ -24,17 +45,105 @@ interface Message {
 }
 
 export const ChatInterface = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'assistant',
-      content: 'Welcome to CampAIgn! I\'m your AI marketing assistant. I can help you create personalized campaigns, analyze market data, and generate compelling content. What would you like to work on today?',
-      timestamp: new Date()
+  // Array of welcome messages to randomly select from
+  const welcomeMessages = [
+    "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
+    "Hello and welcome. I'm here to guide you step by step in building your marketing campaign.\nLet's begin with the essentials—please provide your company's **About page** or **upload a profile document** so I can understand your brand better.",
+    "Welcome aboard. Before we dive into your campaign, I'd like to learn a bit about your company.\nPlease share your **About page link** or **upload a brief company overview document** to help me get started.",
+    "It's great to have you here. Together, we'll create a campaign designed around your brand's story and goals.\nFirst, could you share your **About page** or **upload a company document** so we can begin shaping your campaign strategy?"
+  ];
+
+  // Function to get a random welcome message
+  const getRandomWelcomeMessage = () => {
+    const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
+    return welcomeMessages[randomIndex];
+  };
+
+  // Function to save chat to localStorage
+  const saveChatToStorage = (chatMessages: Message[]) => {
+    try {
+      localStorage.setItem('campaigner-chat', JSON.stringify(chatMessages));
+    } catch (error) {
+      console.error('Error saving chat to localStorage:', error);
     }
-  ]);
+  };
+
+  // Function to load chat from localStorage
+  const loadChatFromStorage = (): Message[] => {
+    try {
+      const savedChat = localStorage.getItem('campaigner-chat');
+      if (savedChat) {
+        const parsedChat = JSON.parse(savedChat);
+        // Convert timestamp strings back to Date objects
+        return parsedChat.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading chat from localStorage:', error);
+    }
+    return [];
+  };
+
+  // Function to start a new chat
+  const startNewChat = () => {
+    setMessages([]);
+    setIsInitialTyping(true);
+    setUploadedFiles([]);
+    localStorage.removeItem('campaigner-chat');
+    
+    // Show typing animation for new chat
+    const timer = setTimeout(() => {
+      setIsInitialTyping(false);
+      const newWelcomeMessage = {
+        id: Date.now().toString(),
+        type: 'assistant' as const,
+        content: getRandomWelcomeMessage(),
+        timestamp: new Date()
+      };
+      setMessages([newWelcomeMessage]);
+      saveChatToStorage([newWelcomeMessage]);
+    }, 2000);
+  };
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isInitialTyping, setIsInitialTyping] = useState(false);
   const [selectedPersona, setSelectedPersona] = useState<string>('cto');
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load chat from localStorage on component mount
+  useEffect(() => {
+    const savedMessages = loadChatFromStorage();
+    if (savedMessages.length > 0) {
+      setMessages(savedMessages);
+      setIsInitialTyping(false);
+    } else {
+      // Show initial typing animation for new users
+      setIsInitialTyping(true);
+      const timer = setTimeout(() => {
+        setIsInitialTyping(false);
+        const welcomeMessage = {
+          id: Date.now().toString(),
+          type: 'assistant' as const,
+          content: getRandomWelcomeMessage(),
+          timestamp: new Date()
+        };
+        setMessages([welcomeMessage]);
+        saveChatToStorage([welcomeMessage]);
+      }, 2000);
+    }
+  }, []);
+
+  // Save chat to localStorage whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveChatToStorage(messages);
+    }
+  }, [messages]);
 
   const personas = [
     { id: 'cto', label: 'Chief Technology Officer', description: 'Tech-focused, efficiency-driven' },
@@ -42,6 +151,38 @@ export const ChatInterface = () => {
     { id: 'startup', label: 'Startup Founder', description: 'Innovative, resource-conscious' },
     { id: 'enterprise', label: 'Enterprise Executive', description: 'ROI-focused, strategic' }
   ];
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const validFiles = Array.from(files).filter(file => {
+        const fileType = file.type.toLowerCase();
+        return fileType === 'application/pdf' || 
+               fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+               file.name.toLowerCase().endsWith('.pdf') ||
+               file.name.toLowerCase().endsWith('.docx');
+      });
+      
+      if (validFiles.length > 0) {
+        setUploadedFiles(prev => [...prev, ...validFiles]);
+        
+        // Add a message showing the uploaded files
+        const fileMessage: Message = {
+          id: Date.now().toString(),
+          type: 'user',
+          content: `📎 Uploaded ${validFiles.length} file(s): ${validFiles.map(f => f.name).join(', ')}`,
+          timestamp: new Date(),
+          persona: selectedPersona
+        };
+        
+        setMessages(prev => [...prev, fileMessage]);
+      }
+    }
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -102,6 +243,16 @@ export const ChatInterface = () => {
 
   return (
     <div className="flex flex-col h-screen relative">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
+
       {/* Chat Header */}
       <div className="border-b border-border/50 p-4 bg-gradient-card">
         <div className="flex items-center justify-between">
@@ -114,15 +265,34 @@ export const ChatInterface = () => {
               <p className="text-sm text-muted-foreground">Chat with AI to generate marketing campaigns</p>
             </div>
           </div>
-          <Badge variant="secondary" className="px-3 py-1">
-            <div className="w-2 h-2 bg-success rounded-full mr-2" />
-            Online
-          </Badge>
+          <Button variant="outline" onClick={startNewChat} className="h-10 px-4">
+            <Sparkles className="w-4 h-4 mr-2" />
+            New Chat
+          </Button>
         </div>
       </div>
 
       {/* Messages - with bottom padding for fixed input */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
+        {/* Initial typing animation */}
+        {isInitialTyping && (
+          <div className="flex items-start space-x-3">
+            <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+              <Bot className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <Card className="p-4 shadow-soft bg-gradient-card">
+              <div className="flex items-center space-x-2">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                </div>
+                <span className="text-sm text-muted-foreground">CampAIgn AI is thinking...</span>
+              </div>
+            </Card>
+          </div>
+        )}
+
         {messages.map((message) => (
           <div
             key={message.id}
@@ -147,11 +317,11 @@ export const ChatInterface = () => {
                 : 'bg-gradient-card'
             }`}>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-6">
                   <span className="font-medium">
                     {message.type === 'user' ? 'You' : 'CampAIgn AI'}
                   </span>
-                  {message.persona && (
+                  {message.type === 'assistant' && message.persona && (
                     <Badge variant="secondary" className="text-xs">
                       {personas.find(p => p.id === message.persona)?.label}
                     </Badge>
@@ -161,26 +331,30 @@ export const ChatInterface = () => {
                   {message.timestamp.toLocaleTimeString()}
                 </span>
               </div>
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {message.content}
-              </div>
+              <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
               {message.type === 'assistant' && (
                 <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-border/50">
-                  <Button variant="ghost" size="sm">
-                    <Copy className="w-3 h-3 mr-1" />
-                    Copy
-                  </Button>
-                  <Button variant="ghost" size="sm">
-                    <Download className="w-3 h-3 mr-1" />
-                    Export
-                  </Button>
-                  <div className="flex-1" />
-                  <Button variant="ghost" size="sm">
-                    <ThumbsUp className="w-3 h-3" />
-                  </Button>
-                  <Button variant="ghost" size="sm">
-                    <ThumbsDown className="w-3 h-3" />
-                  </Button>
+                  {messages.findIndex(m => m.type === 'assistant') === messages.indexOf(message) && (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={triggerFileUpload}
+                        className="flex items-center space-x-2"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Upload Document</span>
+                      </Button>
+                      {uploadedFiles.length > 0 && (
+                        <div className="flex items-center space-x-2 ml-2">
+                          <FileText className="w-3 h-3 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">
+                            {uploadedFiles.length} file(s) uploaded
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </Card>
@@ -234,7 +408,6 @@ export const ChatInterface = () => {
         </div>
         <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
           <span>Press Enter to send, Shift + Enter for new line</span>
-          <span>Credits: 247 / 500</span>
         </div>
       </div>
     </div>
