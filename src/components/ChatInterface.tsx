@@ -44,7 +44,11 @@ interface Message {
   persona?: string;
 }
 
-export const ChatInterface = () => {
+interface ChatInterfaceProps {
+  freshLogin?: boolean;
+}
+
+export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
   // Array of welcome messages to randomly select from
   const welcomeMessages = [
     "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
@@ -117,26 +121,30 @@ export const ChatInterface = () => {
 
   // Load chat from localStorage on component mount
   useEffect(() => {
-    const savedMessages = loadChatFromStorage();
-    if (savedMessages.length > 0) {
-      setMessages(savedMessages);
-      setIsInitialTyping(false);
+    if (freshLogin) {
+      startNewChat();
     } else {
-      // Show initial typing animation for new users
-      setIsInitialTyping(true);
-      const timer = setTimeout(() => {
+      const savedMessages = loadChatFromStorage();
+      if (savedMessages.length > 0) {
+        setMessages(savedMessages);
         setIsInitialTyping(false);
-        const welcomeMessage = {
-          id: Date.now().toString(),
-          type: 'assistant' as const,
-          content: getRandomWelcomeMessage(),
-          timestamp: new Date()
-        };
-        setMessages([welcomeMessage]);
-        saveChatToStorage([welcomeMessage]);
-      }, 2000);
+      } else {
+        // Show initial typing animation for new users
+        setIsInitialTyping(true);
+        const timer = setTimeout(() => {
+          setIsInitialTyping(false);
+          const welcomeMessage = {
+            id: Date.now().toString(),
+            type: 'assistant' as const,
+            content: getRandomWelcomeMessage(),
+            timestamp: new Date()
+          };
+          setMessages([welcomeMessage]);
+          saveChatToStorage([welcomeMessage]);
+        }, 2000);
+      }
     }
-  }, []);
+  }, [freshLogin]);
 
   // Save chat to localStorage whenever messages change
   useEffect(() => {
@@ -317,7 +325,7 @@ export const ChatInterface = () => {
                 : 'bg-gradient-card'
             }`}>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-6">
+                <div className={`flex items-center ${message.type === 'user' && message.content.length < 10 ? 'space-x-8' : 'space-x-6'}`}>
                   <span className="font-medium">
                     {message.type === 'user' ? 'You' : 'CampAIgn AI'}
                   </span>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
@@ -8,16 +8,53 @@ import { Settings } from "@/components/Settings";
 
 interface IndexProps {
   onLogout: () => void;
+  freshLogin: boolean;
 }
 
-const Index = ({ onLogout }: IndexProps) => {
-  const [activeTab, setActiveTab] = useState('chat');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+const Index = ({ onLogout, freshLogin }: IndexProps) => {
+  const [activeTab, setActiveTab] = useState(() => {
+    // Load the last active tab from localStorage, default to 'chat'
+    try {
+      const savedTab = localStorage.getItem('campaigner-active-tab');
+      return savedTab || 'chat';
+    } catch (error) {
+      console.error('Error loading active tab:', error);
+      return 'chat';
+    }
+  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    // Load the sidebar collapsed state from localStorage, default to false
+    try {
+      const savedCollapsed = localStorage.getItem('campaigner-sidebar-collapsed');
+      return savedCollapsed === 'true';
+    } catch (error) {
+      console.error('Error loading sidebar state:', error);
+      return false;
+    }
+  });
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('campaigner-active-tab', activeTab);
+    } catch (error) {
+      console.error('Error saving active tab:', error);
+    }
+  }, [activeTab]);
+
+  // Save sidebar collapsed state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('campaigner-sidebar-collapsed', isSidebarCollapsed.toString());
+    } catch (error) {
+      console.error('Error saving sidebar state:', error);
+    }
+  }, [isSidebarCollapsed]);
 
   const renderContent = () => {
     switch (activeTab) {
       case 'chat':
-        return <ChatInterface />;
+        return <ChatInterface freshLogin={freshLogin} />;
       case 'campaigns':
         return <CampaignBuilder />;
       case 'analytics':
