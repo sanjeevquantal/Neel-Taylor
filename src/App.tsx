@@ -27,6 +27,8 @@ const App = () => {
     // Clear any existing chat data when user logs in
     try {
       localStorage.removeItem('campaigner-chat');
+      localStorage.removeItem('neel-taylor-conversation-history');
+      localStorage.removeItem('campaigner-chat-display');
       localStorage.setItem('campaigner-auth', 'true');
     } catch (error) {
       console.error('Error clearing chat data:', error);
@@ -39,6 +41,8 @@ const App = () => {
     try {
       localStorage.removeItem('campaigner-auth');
       localStorage.removeItem('campaigner-chat');
+      localStorage.removeItem('neel-taylor-conversation-history');
+      localStorage.removeItem('campaigner-chat-display');
     } catch (error) {
       console.error('Error clearing authentication data:', error);
     }

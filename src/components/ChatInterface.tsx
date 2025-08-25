@@ -1,16 +1,16 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { UploadModal } from "@/components/UploadModal";
 import { 
   Send, 
   Bot, 
   User, 
   Sparkles, 
-  Upload,
-  FileText
+  Upload
 } from "lucide-react";
 
 // Simple markdown parser for basic formatting
@@ -36,6 +36,26 @@ const parseMarkdown = (text: string) => {
     .replace(/(<li.*<\/li>)/g, '<ul class="list-disc ml-4 my-2">$1</ul>');
 };
 
+// New interface for API messages
+interface APIMessage {
+  role: 'user' | 'system';
+  content: string;
+}
+
+// New interface for API request
+interface APIRequest {
+  query: string;
+  history: APIMessage[];
+}
+
+// New interface for API response
+interface APIResponse {
+  msg?: string;
+  response?: string;
+  message?: string;
+}
+
+// Display message interface
 interface Message {
   id: string;
   type: 'user' | 'assistant';
@@ -63,29 +83,51 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
     return welcomeMessages[randomIndex];
   };
 
-  // Function to save chat to localStorage
-  const saveChatToStorage = (chatMessages: Message[]) => {
+  // Function to save chat history to localStorage in the required JSON format
+  const saveChatHistoryToStorage = (history: APIMessage[]) => {
     try {
-      localStorage.setItem('campaigner-chat', JSON.stringify(chatMessages));
+      localStorage.setItem('neel-taylor-conversation-history', JSON.stringify(history));
     } catch (error) {
-      console.error('Error saving chat to localStorage:', error);
+      console.error('Error saving chat history to localStorage:', error);
     }
   };
 
-  // Function to load chat from localStorage
-  const loadChatFromStorage = (): Message[] => {
+  // Function to load chat history from localStorage
+  const loadChatHistoryFromStorage = (): APIMessage[] => {
     try {
-      const savedChat = localStorage.getItem('campaigner-chat');
-      if (savedChat) {
-        const parsedChat = JSON.parse(savedChat);
+      const savedHistory = localStorage.getItem('neel-taylor-conversation-history');
+      if (savedHistory) {
+        return JSON.parse(savedHistory);
+      }
+    } catch (error) {
+      console.error('Error loading chat history from localStorage:', error);
+    }
+    return [];
+  };
+
+  // Function to save display messages to localStorage
+  const saveDisplayMessagesToStorage = (displayMessages: Message[]) => {
+    try {
+      localStorage.setItem('campaigner-chat-display', JSON.stringify(displayMessages));
+    } catch (error) {
+      console.error('Error saving display messages to localStorage:', error);
+    }
+  };
+
+  // Function to load display messages from localStorage
+  const loadDisplayMessagesFromStorage = (): Message[] => {
+    try {
+      const savedMessages = localStorage.getItem('campaigner-chat-display');
+      if (savedMessages) {
+        const parsedMessages = JSON.parse(savedMessages);
         // Convert timestamp strings back to Date objects
-        return parsedChat.map((msg: any) => ({
+        return parsedMessages.map((msg: any) => ({
           ...msg,
           timestamp: new Date(msg.timestamp)
         }));
       }
     } catch (error) {
-      console.error('Error loading chat from localStorage:', error);
+      console.error('Error loading display messages from localStorage:', error);
     }
     return [];
   };
@@ -93,9 +135,10 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
   // Function to start a new chat
   const startNewChat = () => {
     setMessages([]);
+    setChatHistory([]);
     setIsInitialTyping(true);
-    setUploadedFiles([]);
-    localStorage.removeItem('campaigner-chat');
+    localStorage.removeItem('neel-taylor-conversation-history');
+    localStorage.removeItem('campaigner-chat-display');
     
     // Show typing animation for new chat
     const timer = setTimeout(() => {
@@ -107,25 +150,27 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
         timestamp: new Date()
       };
       setMessages([newWelcomeMessage]);
-      saveChatToStorage([newWelcomeMessage]);
+      saveDisplayMessagesToStorage([newWelcomeMessage]);
     }, 2000);
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [chatHistory, setChatHistory] = useState<APIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
   const [selectedPersona, setSelectedPersona] = useState<string>('cto');
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load chat from localStorage on component mount
   useEffect(() => {
     if (freshLogin) {
       startNewChat();
     } else {
-      const savedMessages = loadChatFromStorage();
-      if (savedMessages.length > 0) {
+      const savedHistory = loadChatHistoryFromStorage();
+      const savedMessages = loadDisplayMessagesFromStorage();
+      
+      if (savedHistory.length > 0 && savedMessages.length > 0) {
+        setChatHistory(savedHistory);
         setMessages(savedMessages);
         setIsInitialTyping(false);
       } else {
@@ -140,16 +185,22 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
             timestamp: new Date()
           };
           setMessages([welcomeMessage]);
-          saveChatToStorage([welcomeMessage]);
+          saveDisplayMessagesToStorage([welcomeMessage]);
         }, 2000);
       }
     }
   }, [freshLogin]);
 
-  // Save chat to localStorage whenever messages change
+  // Save chat history and display messages to localStorage whenever they change
+  useEffect(() => {
+    if (chatHistory.length > 0) {
+      saveChatHistoryToStorage(chatHistory);
+    }
+  }, [chatHistory]);
+
   useEffect(() => {
     if (messages.length > 0) {
-      saveChatToStorage(messages);
+      saveDisplayMessagesToStorage(messages);
     }
   }, [messages]);
 
@@ -160,36 +211,91 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
     { id: 'enterprise', label: 'Enterprise Executive', description: 'ROI-focused, strategic' }
   ];
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files) {
-      const validFiles = Array.from(files).filter(file => {
-        const fileType = file.type.toLowerCase();
-        return fileType === 'application/pdf' || 
-               fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-               file.name.toLowerCase().endsWith('.pdf') ||
-               file.name.toLowerCase().endsWith('.docx');
-      });
-      
-      if (validFiles.length > 0) {
-        setUploadedFiles(prev => [...prev, ...validFiles]);
-        
-        // Add a message showing the uploaded files
-        const fileMessage: Message = {
-          id: Date.now().toString(),
-          type: 'user',
-          content: `📎 Uploaded ${validFiles.length} file(s): ${validFiles.map(f => f.name).join(', ')}`,
-          timestamp: new Date(),
-          persona: selectedPersona
-        };
-        
-        setMessages(prev => [...prev, fileMessage]);
-      }
-    }
+  const handleUploadSuccess = (message: string) => {
+    // The message now contains the actual file content or URL content
+    console.log('Upload success - Content received:', message);
+    
+    // Add the content to chat
+    const uploadMessage: Message = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: message,
+      timestamp: new Date(),
+      persona: selectedPersona
+    };
+    
+    setMessages(prev => [...prev, uploadMessage]);
+    
+    // Update chat history for API
+    const newHistoryEntry: APIMessage = {
+      role: 'user',
+      content: message
+    };
+    setChatHistory(prev => [...prev, newHistoryEntry]);
+    
+    // Trigger AI response
+    setTimeout(() => {
+      sendMessageWithContent(message);
+    }, 500);
   };
 
-  const triggerFileUpload = () => {
-    fileInputRef.current?.click();
+  const sendMessageWithContent = async (content: string) => {
+    setIsTyping(true);
+
+    try {
+      // Prepare the API request with current history
+      const apiRequest: APIRequest = {
+        query: content,
+        history: chatHistory
+      };
+
+      console.log('Sending API request:', apiRequest);
+
+      // Call the API with the new structure
+      const response = await fetch('https://neeltaylor.onrender.com/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiRequest)
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const data: APIResponse = await response.json();
+      console.log('Received API response:', data);
+      
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: data.msg || data.response || data.message || 'I received your information but couldn\'t process it properly. Please try again.',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, aiResponse]);
+      
+      // Update chat history with the AI response
+      const aiHistoryEntry: APIMessage = {
+        role: 'system',
+        content: data.msg || data.response || data.message || ''
+      };
+      setChatHistory(prev => [...prev, aiHistoryEntry]);
+    } catch (error) {
+      console.error('Error calling API:', error);
+      
+      const errorResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: 'Sorry, I encountered an error while processing your information. Please try again later.',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const sendMessage = async () => {
@@ -204,26 +310,41 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    
+    // Update chat history for API
+    const newHistoryEntry: APIMessage = {
+      role: 'user',
+      content: input
+    };
+    setChatHistory(prev => [...prev, newHistoryEntry]);
+    
     setInput('');
     setIsTyping(true);
 
     try {
-      // Call the API
-      const response = await fetch('https://neeltaylor.onrender.com/chat?strem=true', {
+      // Prepare the API request with current history
+      const apiRequest: APIRequest = {
+        query: input,
+        history: chatHistory
+      };
+
+      console.log('Sending API request:', apiRequest);
+
+      // Call the API with the new structure
+      const response = await fetch('https://neeltaylor.onrender.com/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          query: input
-        })
+        body: JSON.stringify(apiRequest)
       });
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data: APIResponse = await response.json();
+      console.log('Received API response:', data);
       
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
@@ -233,6 +354,13 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
       };
       
       setMessages(prev => [...prev, aiResponse]);
+      
+      // Update chat history with the AI response
+      const aiHistoryEntry: APIMessage = {
+        role: 'system',
+        content: data.msg || data.response || data.message || ''
+      };
+      setChatHistory(prev => [...prev, aiHistoryEntry]);
     } catch (error) {
       console.error('Error calling API:', error);
       
@@ -251,15 +379,7 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
 
   return (
     <div className="flex flex-col h-screen relative">
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        onChange={handleFileUpload}
-        className="hidden"
-      />
+
 
       {/* Chat Header */}
       <div className="border-b border-border/50 p-4 bg-gradient-card">
@@ -344,23 +464,17 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
                 <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-border/50">
                   {messages.findIndex(m => m.type === 'assistant') === messages.indexOf(message) && (
                     <>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={triggerFileUpload}
-                        className="flex items-center space-x-2"
-                      >
-                        <Upload className="w-3 h-3" />
-                        <span>Upload Document</span>
-                      </Button>
-                      {uploadedFiles.length > 0 && (
-                        <div className="flex items-center space-x-2 ml-2">
-                          <FileText className="w-3 h-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            {uploadedFiles.length} file(s) uploaded
-                          </span>
-                        </div>
-                      )}
+                      <UploadModal onUploadSuccess={handleUploadSuccess}>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex items-center space-x-2"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload Document</span>
+                        </Button>
+                      </UploadModal>
+                      
                     </>
                   )}
                 </div>
