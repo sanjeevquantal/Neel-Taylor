@@ -5,6 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { ChatInterface } from "@/components/ChatInterface";
 import { CampaignBuilder } from "@/components/CampaignBuilder";
 import { Settings } from "@/components/Settings";
+import { CampaignDetails } from "@/components/CampaignDetails";
 
 interface IndexProps {
   onLogout: () => void;
@@ -32,6 +33,22 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       return false;
     }
   });
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem('neel-taylor-conversation-id');
+      return saved ? Number(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [activeCampaignId, setActiveCampaignId] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem('campaigner-active-campaign-id');
+      return saved ? Number(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Save active tab to localStorage whenever it changes
   useEffect(() => {
@@ -54,9 +71,9 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const renderContent = () => {
     switch (activeTab) {
       case 'chat':
-        return <ChatInterface freshLogin={freshLogin} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <ChatInterface freshLogin={freshLogin} isSidebarCollapsed={isSidebarCollapsed} initialConversationId={activeConversationId} onConversationIdChange={setActiveConversationId} />;
       case 'campaigns':
-        return <CampaignBuilder />;
+        return <CampaignBuilder selectedCampaignId={activeCampaignId} />;
       case 'analytics':
         return <Dashboard />;
       case 'settings':
@@ -244,10 +261,27 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
         onTabChange={setActiveTab} 
         onLogout={onLogout} 
         onCollapsedChange={setIsSidebarCollapsed}
+        onSelectConversation={(id) => {
+          setActiveConversationId(id);
+          try { localStorage.setItem('neel-taylor-conversation-id', String(id)); } catch {}
+        }}
+        onSelectCampaign={(id) => {
+          setActiveCampaignId(id);
+          try { localStorage.setItem('campaigner-active-campaign-id', String(id)); } catch {}
+        }}
       />
       <main className={`${isSidebarCollapsed ? 'ml-16' : 'ml-64'} transition-all duration-300 overflow-auto min-h-screen`}>
         {renderContent()}
       </main>
+      {activeCampaignId !== null && (
+        <CampaignDetails
+          campaignId={activeCampaignId}
+          onClose={() => {
+            setActiveCampaignId(null);
+            try { localStorage.removeItem('campaigner-active-campaign-id'); } catch {}
+          }}
+        />
+      )}
     </div>
   );
 };

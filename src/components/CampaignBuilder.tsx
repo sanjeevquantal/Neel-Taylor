@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +22,13 @@ import {
   Pause,
   Settings
 } from "lucide-react";
+import apiClient from "@/lib/api";
 
-export const CampaignBuilder = () => {
+interface CampaignBuilderProps {
+  selectedCampaignId?: number | null;
+}
+
+export const CampaignBuilder = ({ selectedCampaignId }: CampaignBuilderProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [campaignData, setCampaignData] = useState({
     name: '',
@@ -36,6 +41,38 @@ export const CampaignBuilder = () => {
     scheduledDate: '',
     targetCount: 0
   });
+  const [loadingSelected, setLoadingSelected] = useState(false);
+  const [selectedError, setSelectedError] = useState<string | null>(null);
+
+  // Load selected campaign details when an id is provided
+  useEffect(() => {
+    const loadSelected = async () => {
+      if (!selectedCampaignId) return;
+      setLoadingSelected(true);
+      setSelectedError(null);
+      try {
+        const data = await apiClient.get<any>(`/campaigns/${selectedCampaignId}`);
+        // Attempt to map common fields
+        setCampaignData(prev => ({
+          ...prev,
+          name: String((data?.name ?? data?.title ?? `Campaign ${selectedCampaignId}`) || ''),
+          type: String((data?.type ?? 'email') || 'email'),
+          persona: String((data?.persona ?? '') || ''),
+          tone: String((data?.tone ?? prev.tone) || prev.tone),
+          subject: String((data?.subject ?? '') || ''),
+          content: String((data?.content ?? data?.body ?? '') || ''),
+          schedule: String((data?.schedule ?? prev.schedule) || prev.schedule),
+          scheduledDate: String((data?.scheduledDate ?? data?.scheduled_at ?? '') || ''),
+          targetCount: Number((data?.targetCount ?? data?.targets?.length ?? prev.targetCount) || prev.targetCount)
+        }));
+      } catch (err: any) {
+        setSelectedError(err?.message || 'Failed to load campaign');
+      } finally {
+        setLoadingSelected(false);
+      }
+    };
+    loadSelected();
+  }, [selectedCampaignId]);
 
   const steps = [
     { id: 'basic', label: 'Basic Info', icon: Target },
@@ -112,6 +149,20 @@ export const CampaignBuilder = () => {
           </Button>
         </div>
       </div>
+
+      {selectedCampaignId && (
+        <Card className="p-4 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Selected Campaign</div>
+              <div className="font-medium">#{selectedCampaignId} — {campaignData.name || 'Loading…'}</div>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {loadingSelected ? 'Loading…' : selectedError ? <span className="text-destructive">{selectedError}</span> : 'Loaded'}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Progress Bar */}
       <Card className="p-6 bg-gradient-card shadow-soft">

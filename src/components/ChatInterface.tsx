@@ -63,9 +63,11 @@ interface Message {
 interface ChatInterfaceProps {
   freshLogin?: boolean;
   isSidebarCollapsed?: boolean;
+  initialConversationId?: number | null;
+  onConversationIdChange?: (id: number | null) => void;
 }
 
-export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false }: ChatInterfaceProps) => {
+export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange }: ChatInterfaceProps) => {
   // Array of welcome messages to randomly select from
   // const welcomeMessages = [
   //   "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
@@ -119,14 +121,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false }
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [conversationId, setConversationId] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem('neel-taylor-conversation-id');
-      return saved ? Number(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [conversationId, setConversationId] = useState<number | null>(initialConversationId);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
@@ -159,6 +154,42 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false }
       // }
     }
   }, [freshLogin]);
+
+  // Sync external initial conversation id into local state
+  useEffect(() => {
+    setConversationId(initialConversationId ?? null);
+  }, [initialConversationId]);
+
+  // Load full conversation history when conversationId changes (from sidebar selection)
+  useEffect(() => {
+    const loadHistory = async (id: number) => {
+      setIsInitialTyping(false);
+      setIsTyping(false);
+      // Clear existing messages immediately so previous conversation disappears
+      setMessages([]);
+      try {
+        const data = await apiClient.get<any>(`/conversations/${id}`);
+        // Normalize possible shapes to Message[]
+        // Expect either { messages: [...] } or [...]
+        const rawMessages: any[] = Array.isArray(data) ? data : (Array.isArray(data?.messages) ? data.messages : []);
+        const mapped: Message[] = rawMessages.map((m: any, idx: number) => ({
+          id: String(m?.id ?? idx + 1),
+          type: (m?.role === 'assistant' || m?.type === 'assistant') ? 'assistant' : 'user',
+          content: String(m?.content ?? m?.text ?? m ?? ''),
+          timestamp: new Date(m?.created_at ?? m?.timestamp ?? Date.now()),
+        }));
+        setMessages(mapped);
+      } catch (err) {
+        console.error('Failed to load conversation history', err);
+      }
+    };
+
+    if (conversationId) {
+      void loadHistory(conversationId);
+    } else {
+      setMessages([]);
+    }
+  }, [conversationId]);
 
   // useEffect(() => {
   //   if (messages.length > 0) {
@@ -212,6 +243,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false }
       // Persist conversation id from response if present
       if (data.conversation_id && !conversationId) {
         setConversationId(data.conversation_id);
+        onConversationIdChange?.(data.conversation_id);
+        try { localStorage.setItem('neel-taylor-conversation-id', String(data.conversation_id)); } catch {}
       }
     } catch (error) {
       console.error('Error calling API:', error);
@@ -269,6 +302,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false }
       // Persist conversation id from response if present
       if (data.conversation_id && !conversationId) {
         setConversationId(data.conversation_id);
+        onConversationIdChange?.(data.conversation_id);
+        try { localStorage.setItem('neel-taylor-conversation-id', String(data.conversation_id)); } catch {}
       }
     } catch (error) {
       console.error('Error calling API:', error);
