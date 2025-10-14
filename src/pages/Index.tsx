@@ -54,7 +54,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const renderContent = () => {
     switch (activeTab) {
       case 'chat':
-        return <ChatInterface freshLogin={freshLogin} />;
+        return <ChatInterface freshLogin={freshLogin} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'campaigns':
         return <CampaignBuilder />;
       case 'analytics':

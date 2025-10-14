@@ -1,17 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { UploadModal } from "@/components/UploadModal";
 import { 
   Send, 
   Bot, 
   User, 
-  Sparkles, 
-  Upload
+  Sparkles,
+  Paperclip
 } from "lucide-react";
+import apiClient from "@/lib/api";
+import { UploadModal } from "@/components/UploadModal";
 
 // Simple markdown parser for basic formatting
 const parseMarkdown = (text: string) => {
@@ -36,23 +37,18 @@ const parseMarkdown = (text: string) => {
     .replace(/(<li.*<\/li>)/g, '<ul class="list-disc ml-4 my-2">$1</ul>');
 };
 
-// New interface for API messages
-interface APIMessage {
-  role: 'user' | 'system';
-  content: string;
-}
-
 // New interface for API request
 interface APIRequest {
   query: string;
-  history: APIMessage[];
+  conversation_id?: number | null;
 }
 
 // New interface for API response
 interface APIResponse {
-  msg?: string;
-  response?: string;
-  message?: string;
+  error: string;
+  msg: string;
+  total_time: string;
+  conversation_id: number;
 }
 
 // Display message interface
@@ -66,143 +62,119 @@ interface Message {
 
 interface ChatInterfaceProps {
   freshLogin?: boolean;
+  isSidebarCollapsed?: boolean;
 }
 
-export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
+export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false }: ChatInterfaceProps) => {
   // Array of welcome messages to randomly select from
-  const welcomeMessages = [
-    "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
-    "Hello and welcome. I'm here to guide you step by step in building your marketing campaign.\nLet's begin with the essentials—please provide your company's **About page** or **upload a profile document** so I can understand your brand better.",
-    "Welcome aboard. Before we dive into your campaign, I'd like to learn a bit about your company.\nPlease share your **About page link** or **upload a brief company overview document** to help me get started.",
-    "It's great to have you here. Together, we'll create a campaign designed around your brand's story and goals.\nFirst, could you share your **About page** or **upload a company document** so we can begin shaping your campaign strategy?"
-  ];
+  // const welcomeMessages = [
+  //   "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
+  //   "Hello and welcome. I'm here to guide you step by step in building your marketing campaign.\nLet's begin with the essentials—please provide your company's **About page** or **upload a profile document** so I can understand your brand better.",
+  //   "Welcome aboard. Before we dive into your campaign, I'd like to learn a bit about your company.\nPlease share your **About page link** or **upload a brief company overview document** to help me get started.",
+  //   "It's great to have you here. Together, we'll create a campaign designed around your brand's story and goals.\nFirst, could you share your **About page** or **upload a company document** so we can begin shaping your campaign strategy?"
+  // ];
 
   // Function to get a random welcome message
-  const getRandomWelcomeMessage = () => {
-    const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
-    return welcomeMessages[randomIndex];
-  };
+  // const getRandomWelcomeMessage = () => {
+  //   const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
+  //   return welcomeMessages[randomIndex];
+  // };
 
-  // Function to save chat history to localStorage in the required JSON format
-  const saveChatHistoryToStorage = (history: APIMessage[]) => {
-    try {
-      localStorage.setItem('neel-taylor-conversation-history', JSON.stringify(history));
-    } catch (error) {
-      console.error('Error saving chat history to localStorage:', error);
-    }
-  };
-
-  // Function to load chat history from localStorage
-  const loadChatHistoryFromStorage = (): APIMessage[] => {
-    try {
-      const savedHistory = localStorage.getItem('neel-taylor-conversation-history');
-      if (savedHistory) {
-        return JSON.parse(savedHistory);
-      }
-    } catch (error) {
-      console.error('Error loading chat history from localStorage:', error);
-    }
-    return [];
-  };
 
   // Function to save display messages to localStorage
-  const saveDisplayMessagesToStorage = (displayMessages: Message[]) => {
-    try {
-      localStorage.setItem('campaigner-chat-display', JSON.stringify(displayMessages));
-    } catch (error) {
-      console.error('Error saving display messages to localStorage:', error);
-    }
-  };
+  // const saveDisplayMessagesToStorage = (displayMessages: Message[]) => {
+  //   try {
+  //     localStorage.setItem('campaigner-chat-display', JSON.stringify(displayMessages));
+  //   } catch (error) {
+  //     console.error('Error saving display messages to localStorage:', error);
+  //   }
+  // };
 
   // Function to load display messages from localStorage
-  const loadDisplayMessagesFromStorage = (): Message[] => {
-    try {
-      const savedMessages = localStorage.getItem('campaigner-chat-display');
-      if (savedMessages) {
-        const parsedMessages = JSON.parse(savedMessages);
-        // Convert timestamp strings back to Date objects
-        return parsedMessages.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp)
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading display messages from localStorage:', error);
-    }
-    return [];
-  };
+  // const loadDisplayMessagesFromStorage = (): Message[] => {
+  //   try {
+  //     const savedMessages = localStorage.getItem('campaigner-chat-display');
+  //     if (savedMessages) {
+  //       const parsedMessages = JSON.parse(savedMessages);
+  //       // Convert timestamp strings back to Date objects
+  //       return parsedMessages.map((msg: any) => ({
+  //         ...msg,
+  //         timestamp: new Date(msg.timestamp)
+  //       }));
+  //     }
+  //   } catch (error) {
+  //     console.error('Error loading display messages from localStorage:', error);
+  //   }
+  //   return [];
+  // };
 
   // Function to start a new chat
   const startNewChat = () => {
     setMessages([]);
-    setChatHistory([]);
-    setIsInitialTyping(true);
+    setConversationId(null);
+    setIsInitialTyping(false);
     localStorage.removeItem('neel-taylor-conversation-history');
     localStorage.removeItem('campaigner-chat-display');
-    
-    // Show typing animation for new chat
-    const timer = setTimeout(() => {
-      setIsInitialTyping(false);
-      const newWelcomeMessage = {
-        id: Date.now().toString(),
-        type: 'assistant' as const,
-        content: getRandomWelcomeMessage(),
-        timestamp: new Date()
-      };
-      setMessages([newWelcomeMessage]);
-      saveDisplayMessagesToStorage([newWelcomeMessage]);
-    }, 2000);
+    localStorage.removeItem('neel-taylor-conversation-id');
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [chatHistory, setChatHistory] = useState<APIMessage[]>([]);
+  const [conversationId, setConversationId] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem('neel-taylor-conversation-id');
+      return saved ? Number(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
   const [selectedPersona, setSelectedPersona] = useState<string>('cto');
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll to bottom on new messages or typing changes
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    } else if (listRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
 
   // Load chat from localStorage on component mount
   useEffect(() => {
     if (freshLogin) {
       startNewChat();
     } else {
-      const savedHistory = loadChatHistoryFromStorage();
-      const savedMessages = loadDisplayMessagesFromStorage();
+      // const savedMessages = loadDisplayMessagesFromStorage();
       
-      if (savedHistory.length > 0 && savedMessages.length > 0) {
-        setChatHistory(savedHistory);
-        setMessages(savedMessages);
-        setIsInitialTyping(false);
-      } else {
-        // Show initial typing animation for new users
-        setIsInitialTyping(true);
-        const timer = setTimeout(() => {
-          setIsInitialTyping(false);
-          const welcomeMessage = {
-            id: Date.now().toString(),
-            type: 'assistant' as const,
-            content: getRandomWelcomeMessage(),
-            timestamp: new Date()
-          };
-          setMessages([welcomeMessage]);
-          saveDisplayMessagesToStorage([welcomeMessage]);
-        }, 2000);
-      }
+      // if (savedMessages.length > 0) {
+      //   setMessages(savedMessages);
+      //   setIsInitialTyping(false);
+      // } else {
+      //   // Show initial typing animation for new users
+      //   setIsInitialTyping(false);
+      // }
     }
   }, [freshLogin]);
 
-  // Save chat history and display messages to localStorage whenever they change
-  useEffect(() => {
-    if (chatHistory.length > 0) {
-      saveChatHistoryToStorage(chatHistory);
-    }
-  }, [chatHistory]);
+  // useEffect(() => {
+  //   if (messages.length > 0) {
+  //     saveDisplayMessagesToStorage(messages);
+  //   }
+  // }, [messages]);
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      saveDisplayMessagesToStorage(messages);
-    }
-  }, [messages]);
+  // useEffect(() => {
+  //   try {
+  //     if (conversationId) {
+  //       localStorage.setItem('neel-taylor-conversation-id', String(conversationId));
+  //     } else {
+  //       localStorage.removeItem('neel-taylor-conversation-id');
+  //     }
+  //   } catch {}
+  // }, [conversationId]);
 
   const personas = [
     { id: 'cto', label: 'Chief Technology Officer', description: 'Tech-focused, efficiency-driven' },
@@ -211,77 +183,36 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
     { id: 'enterprise', label: 'Enterprise Executive', description: 'ROI-focused, strategic' }
   ];
 
-  const handleUploadSuccess = (message: string) => {
-    // The message now contains the actual file content or URL content
-    console.log('Upload success - Content received:', message);
-    
-    // Add the content to chat
-    const uploadMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: message,
-      timestamp: new Date(),
-      persona: selectedPersona
-    };
-    
-    setMessages(prev => [...prev, uploadMessage]);
-    
-    // Update chat history for API
-    const newHistoryEntry: APIMessage = {
-      role: 'user',
-      content: message
-    };
-    setChatHistory(prev => [...prev, newHistoryEntry]);
-    
-    // Trigger AI response
-    setTimeout(() => {
-      sendMessageWithContent(message);
-    }, 500);
-  };
 
   const sendMessageWithContent = async (content: string) => {
     setIsTyping(true);
 
     try {
-      // Prepare the API request with current history
-      const apiRequest: APIRequest = {
-        query: content,
-        history: chatHistory
-      };
+      // Prepare the API request - backend will load history from DB
+      const apiRequest: APIRequest = { query: content };
+      if (conversationId) {
+        apiRequest.conversation_id = conversationId;
+      }
 
       console.log('Sending API request:', apiRequest);
 
-      // Call the API with the new structure
-      const response = await fetch('https://neeltaylor.onrender.com/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(apiRequest)
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
-      }
-
-      const data: APIResponse = await response.json();
+      // Call the API via client to backend /api/chat
+      const data = await apiClient.post<APIResponse>('/chat', apiRequest);
       console.log('Received API response:', data);
       
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: data.msg || data.response || data.message || 'I received your information but couldn\'t process it properly. Please try again.',
+        content: data.msg || 'I received your information but couldn\'t process it properly. Please try again.',
         timestamp: new Date()
       };
       
       setMessages(prev => [...prev, aiResponse]);
-      
-      // Update chat history with the AI response
-      const aiHistoryEntry: APIMessage = {
-        role: 'system',
-        content: data.msg || data.response || data.message || ''
-      };
-      setChatHistory(prev => [...prev, aiHistoryEntry]);
+
+      // Persist conversation id from response if present
+      if (data.conversation_id && !conversationId) {
+        setConversationId(data.conversation_id);
+      }
     } catch (error) {
       console.error('Error calling API:', error);
       
@@ -310,57 +241,35 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
-    
-    // Update chat history for API
-    const newHistoryEntry: APIMessage = {
-      role: 'user',
-      content: input
-    };
-    setChatHistory(prev => [...prev, newHistoryEntry]);
-    
     setInput('');
     setIsTyping(true);
 
     try {
-      // Prepare the API request with current history
-      const apiRequest: APIRequest = {
-        query: input,
-        history: chatHistory
-      };
+      // Prepare the API request - backend will load history from DB
+      const apiRequest: APIRequest = { query: input };
+      if (conversationId) {
+        apiRequest.conversation_id = conversationId;
+      }
 
       console.log('Sending API request:', apiRequest);
 
-      // Call the API with the new structure
-      const response = await fetch('https://neeltaylor.onrender.com/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(apiRequest)
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
-      }
-
-      const data: APIResponse = await response.json();
+      // Call the API via client to backend /api/chat
+      const data = await apiClient.post<APIResponse>('/chat', apiRequest);
       console.log('Received API response:', data);
       
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: data.msg || data.response || data.message || 'I received your message but couldn\'t process it properly. Please try again.',
+        content: data.msg || 'I received your message but couldn\'t process it properly. Please try again.',
         timestamp: new Date()
       };
       
       setMessages(prev => [...prev, aiResponse]);
-      
-      // Update chat history with the AI response
-      const aiHistoryEntry: APIMessage = {
-        role: 'system',
-        content: data.msg || data.response || data.message || ''
-      };
-      setChatHistory(prev => [...prev, aiHistoryEntry]);
+
+      // Persist conversation id from response if present
+      if (data.conversation_id && !conversationId) {
+        setConversationId(data.conversation_id);
+      }
     } catch (error) {
       console.error('Error calling API:', error);
       
@@ -375,6 +284,20 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleUploadSuccess = (content: string) => {
+    // Create a user message that mirrors ChatGPT's behavior of showing the raw content
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      type: 'user',
+      content,
+      timestamp: new Date(),
+      persona: selectedPersona
+    };
+    setMessages(prev => [...prev, userMessage]);
+    // Immediately send to backend using helper that accepts provided content
+    void sendMessageWithContent(content);
   };
 
   return (
@@ -400,8 +323,9 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
         </div>
       </div>
 
-      {/* Messages - with bottom padding for fixed input */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
+      {/* Messages - with bottom padding for fixed input; centered like ChatGPT */}
+      <div ref={listRef} className="flex-1 overflow-y-auto p-4 pb-32">
+        <div className="max-w-2xl mx-auto space-y-4">
         {/* Initial typing animation */}
         {isInitialTyping && (
           <div className="flex items-start space-x-3">
@@ -460,25 +384,7 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
                 </span>
               </div>
               <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
-              {message.type === 'assistant' && (
-                <div className="flex items-center space-x-2 mt-3 pt-3 border-t border-border/50">
-                  {messages.findIndex(m => m.type === 'assistant') === messages.indexOf(message) && (
-                    <>
-                      <UploadModal onUploadSuccess={handleUploadSuccess}>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="flex items-center space-x-2"
-                        >
-                          <Upload className="w-3 h-3" />
-                          <span>Upload Document</span>
-                        </Button>
-                      </UploadModal>
-                      
-                    </>
-                  )}
-                </div>
-              )}
+              {/* Upload UI removed */}
             </Card>
           </div>
         ))}
@@ -495,16 +401,20 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
                   <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
                   <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
                 </div>
-                <span className="text-sm text-muted-foreground">CampAIgn AI is thinking...</span>
+                <span className="text-sm text-muted-foreground">CampAIgn AI is typing…</span>
               </div>
             </Card>
           </div>
         )}
+        <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Fixed Input Area at Bottom */}
-      <div className="fixed bottom-0 left-64 right-0 border-t border-border/50 p-4 bg-gradient-card backdrop-blur-sm z-40 transition-all duration-300">
-        <div className="flex items-end space-x-3">
+      <div className={`fixed bottom-0 right-0 border-t border-border/50 p-4 bg-transparent z-40 transition-all duration-300 ${
+        isSidebarCollapsed ? 'left-16' : 'left-64'
+      }`}>
+        <div className="flex items-end space-x-3 max-w-2xl mx-auto">
           <div className="flex-1">
             <Textarea
               value={input}
@@ -519,6 +429,15 @@ export const ChatInterface = ({ freshLogin = false }: ChatInterfaceProps) => {
               }}
             />
           </div>
+          <UploadModal onUploadSuccess={handleUploadSuccess}>
+            <Button 
+              variant="ghost" 
+              className="h-[60px] w-12 px-0"
+              title="Upload file or link"
+            >
+              <Paperclip className="w-4 h-4" />
+            </Button>
+          </UploadModal>
           <Button 
             onClick={sendMessage}
             disabled={!input.trim() || isTyping}

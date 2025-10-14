@@ -46,7 +46,7 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange }:
       isCollapsed ? 'w-16' : 'w-64'
     } flex flex-col shadow-medium fixed left-0 top-0 z-50`}>
       {/* Header */}
-      <div className="p-6 border-b border-border/50">
+      <div className={`border-b border-border/50 ${isCollapsed ? 'p-2' : 'p-6'}`}>
         {!isCollapsed && (
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -61,7 +61,7 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange }:
           </div>
         )}
         {isCollapsed && (
-          <div className="flex flex-col items-center space-y-3">
+          <div className="flex flex-col items-center space-y-2">
             <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
               <Zap className="w-4 h-4 text-primary-foreground" />
             </div>
@@ -71,7 +71,9 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange }:
         <Button
           variant="ghost"
           size="sm"
-          className="absolute -right-3 top-6 h-6 w-6 rounded-full border bg-card shadow-soft"
+          className={`absolute -right-3 h-6 w-6 rounded-full border bg-card shadow-soft ${
+            isCollapsed ? 'top-2' : 'top-6'
+          }`}
           onClick={handleCollapse}
         >
           {isCollapsed ? (
@@ -79,11 +81,12 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange }:
           ) : (
             <ChevronLeft className="w-3 h-3" />
           )}
+
         </Button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className={`flex-1 space-y-2 ${isCollapsed ? 'p-2' : 'p-4'}`}>
         {navItems.map((item) => (
           <Button
             key={item.id}
