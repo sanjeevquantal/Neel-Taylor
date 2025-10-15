@@ -502,9 +502,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               </div>
             </div>
           </div>
-          <div className="flex items-center justify-center mt-3 text-xs text-muted-foreground">
-            <span>Press Enter to send, Shift + Enter for new line</span>
-          </div>
+          {/*<div className="flex items-center justify-center mt-3 text-xs text-muted-foreground">
+            <span> Enter to send, Shift + Enter for new line</span>
+          </div>*/}
         </div>
       </div>
     </div>
