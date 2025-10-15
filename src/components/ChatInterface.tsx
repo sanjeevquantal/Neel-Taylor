@@ -364,7 +364,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         {/* Initial typing animation */}
         {isInitialTyping && (
           <div className="flex items-start space-x-3">
-            <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
               <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             <Card className="p-4 shadow-soft bg-gradient-card">
@@ -387,7 +387,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
             }`}
           >
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            <div className={`aspect-square h-8 rounded-lg flex items-center justify-center ${
               message.type === 'user' 
                 ? 'bg-primary text-primary-foreground' 
                 : 'bg-gradient-primary text-primary-foreground shadow-glow'
@@ -395,7 +395,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               {message.type === 'user' ? (
                 <User className="w-4 h-4" />
               ) : (
-                <Bot className="w-4 h-4" />
+                <Bot className="w- h-4" />
               )}
             </div>
             <Card className={`max-w-2xl p-4 shadow-soft ${
@@ -426,7 +426,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
         {isTyping && (
           <div className="flex items-start space-x-3">
-            <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
               <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             <Card className="p-4 shadow-soft bg-gradient-card">
@@ -446,44 +446,65 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       </div>
 
       {/* Fixed Input Area at Bottom */}
-      <div className={`fixed bottom-0 right-0 border-t border-border/50 p-4 bg-transparent z-40 transition-all duration-300 ${
+      <div className={`fixed bottom-0 right-0 border-border/50 p-4 bg-transparent z-40 transition-all duration-300 ${
         isSidebarCollapsed ? 'left-16' : 'left-64'
       }`}>
-        <div className="flex items-end space-x-3 max-w-2xl mx-auto">
-          <div className="flex-1">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Describe your marketing campaign needs... (e.g., 'Create an email campaign for SaaS product targeting CTOs')"
-              className="min-h-[60px] resize-none"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-            />
+        <div className="max-w-2xl mx-auto">
+          <div className="relative">
+            <div className="flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20">
+              {/* Input field */}
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask AI to create a marketing campaign for your company"
+                className="flex-1 border-0 bg-transparent px-2 py-0 min-h-6 max-h-16 resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-hidden"
+                style={{ 
+                  height: '1.5rem',
+                  lineHeight: '1.5rem'
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = '1.5rem';
+                  const newHeight = Math.min(target.scrollHeight, 64); // 64px = 4 lines
+                  target.style.height = newHeight + 'px';
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+              />
+              
+              {/* Right side actions */}
+              <div className="flex items-center space-x-2 ml-3">
+                <UploadModal onUploadSuccess={handleUploadSuccess}>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="h-8 w-8 p-0 hover:bg-muted-foreground/10"
+                    title="Upload file or link"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </Button>
+                </UploadModal>
+
+                <Button 
+                  variant="default" 
+                  size="sm"
+                  className="h-8 px-3 rounded-full"
+                  title="Send message"
+                  onClick={sendMessage}
+                  disabled={!input.trim() || isTyping}
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
           </div>
-          <UploadModal onUploadSuccess={handleUploadSuccess}>
-            <Button 
-              variant="ghost" 
-              className="h-[60px] w-12 px-0"
-              title="Upload file or link"
-            >
-              <Paperclip className="w-4 h-4" />
-            </Button>
-          </UploadModal>
-          <Button 
-            onClick={sendMessage}
-            disabled={!input.trim() || isTyping}
-            className="h-[60px] px-6"
-            variant="default"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
-        <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
-          <span>Press Enter to send, Shift + Enter for new line</span>
+          <div className="flex items-center justify-center mt-3 text-xs text-muted-foreground">
+            <span>Press Enter to send, Shift + Enter for new line</span>
+          </div>
         </div>
       </div>
     </div>

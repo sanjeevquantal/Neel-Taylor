@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
+import Campaign from "./pages/Campaign";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -61,6 +62,18 @@ const App = () => {
               path="/" 
               element={
                 isAuthenticated ? <Index onLogout={handleLogout} freshLogin={isFreshLogin} /> : <Login onLogin={handleLogin} />
+              }
+            />
+            <Route 
+              path="/conversations/:id" 
+              element={
+                isAuthenticated ? <Index onLogout={handleLogout} freshLogin={isFreshLogin} /> : <Login onLogin={handleLogin} />
+              }
+            />
+            <Route
+              path="/campaigns/:id"
+              element={
+                isAuthenticated ? <Campaign /> : <Login onLogin={handleLogin} />
               }
             />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

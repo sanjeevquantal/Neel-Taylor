@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useImperativeHandle, forwardRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,10 @@ interface SidebarProps {
   onSelectCampaign?: (campaignId: number) => void;
 }
 
+export interface SidebarRef {
+  refreshConversations: (options?: { silent?: boolean }) => Promise<void>;
+}
+
 type ConversationItem = {
   id: number;
   title?: string | null;
@@ -35,7 +39,7 @@ type ConversationItem = {
   created_at?: string | null;
 };
 
-export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }: SidebarProps) => {
+export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }, ref) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
@@ -58,55 +62,62 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange, o
     { id: 'conversations', label: 'Conversations', icon: History },
   ];
 
+  // Function to fetch conversations
+  const fetchConversations = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setIsLoadingChats(true);
+    setChatError(null);
+    try {
+      // Get user id from storage or default to 1
+      let userId: number = 1;
+      try {
+        const stored = localStorage.getItem('campaigner-user-id');
+        if (stored) userId = Number(stored) || 1;
+        else localStorage.setItem('campaigner-user-id', String(userId));
+      } catch {}
+
+      const data = await apiClient.get<any>(`/users/${userId}/conversations`);
+      // Normalize possible shapes: array of objects, array of strings, or object with "items"
+      let items: ConversationItem[] = [];
+      if (Array.isArray(data)) {
+        items = data.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title ?? it?.name ?? null,
+          last_message: it?.last_message ?? it?.lastMessage ?? null,
+          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
+          created_at: it?.created_at ?? it?.createdAt ?? null,
+        }));
+      } else if (data && Array.isArray((data as any).items)) {
+        items = (data as any).items.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title ?? it?.name ?? null,
+          last_message: it?.last_message ?? it?.lastMessage ?? null,
+          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
+          created_at: it?.created_at ?? it?.createdAt ?? null,
+        }));
+      } else if (typeof data === 'string') {
+        // Some APIs may return a plain string; treat as a single conversation
+        items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
+      }
+      setConversations(items);
+    } catch (err: any) {
+      setChatError(err?.message || 'Failed to load conversations');
+    } finally {
+      if (!silent) setIsLoadingChats(false);
+    }
+  };
+
   // Fetch conversations for the sidebar list
   useEffect(() => {
-    const fetchConversations = async () => {
-      setIsLoadingChats(true);
-      setChatError(null);
-      try {
-        // Get user id from storage or default to 1
-        let userId: number = 1;
-        try {
-          const stored = localStorage.getItem('campaigner-user-id');
-          if (stored) userId = Number(stored) || 1;
-          else localStorage.setItem('campaigner-user-id', String(userId));
-        } catch {}
-
-        const data = await apiClient.get<any>(`/users/${userId}/conversations`);
-        // Normalize possible shapes: array of objects, array of strings, or object with "items"
-        let items: ConversationItem[] = [];
-        if (Array.isArray(data)) {
-          items = data.map((it: any, idx: number) => ({
-            id: Number(it?.id ?? idx + 1),
-            title: it?.title ?? it?.name ?? null,
-            last_message: it?.last_message ?? it?.lastMessage ?? null,
-            updated_at: it?.updated_at ?? it?.updatedAt ?? null,
-            created_at: it?.created_at ?? it?.createdAt ?? null,
-          }));
-        } else if (data && Array.isArray((data as any).items)) {
-          items = (data as any).items.map((it: any, idx: number) => ({
-            id: Number(it?.id ?? idx + 1),
-            title: it?.title ?? it?.name ?? null,
-            last_message: it?.last_message ?? it?.lastMessage ?? null,
-            updated_at: it?.updated_at ?? it?.updatedAt ?? null,
-            created_at: it?.created_at ?? it?.createdAt ?? null,
-          }));
-        } else if (typeof data === 'string') {
-          // Some APIs may return a plain string; treat as a single conversation
-          items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
-        }
-        setConversations(items);
-      } catch (err: any) {
-        setChatError(err?.message || 'Failed to load conversations');
-      } finally {
-        setIsLoadingChats(false);
-      }
-    };
-
     // Only fetch when expanded to avoid wasted work on tiny sidebar
     fetchConversations();
     // Optionally could re-fetch on interval in future
   }, []);
+
+  // Expose refresh function to parent component
+  useImperativeHandle(ref, () => ({
+    refreshConversations: (options?: { silent?: boolean }) => fetchConversations(options)
+  }), []);
 
   // Fetch user campaigns for the sidebar list
   useEffect(() => {
@@ -215,14 +226,7 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange, o
           >
             <item.icon className="w-4 h-4" />
             {!isCollapsed && (
-              <>
-                <span className="flex-1 text-left">{item.label}</span>
-                {item.badge && (
-                  <Badge variant="secondary" className="text-xs px-2 py-0">
-                    {item.badge}
-                  </Badge>
-                )}
-              </>
+              <span className="flex-1 text-left">{item.label}</span>
             )}
           </Button>
         ))}
@@ -322,4 +326,4 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, onCollapsedChange, o
       )}
     </Card>
   );
-};
+});

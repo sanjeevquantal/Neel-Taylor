@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Sidebar } from "@/components/Sidebar";
+import { Sidebar, SidebarRef } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { ChatInterface } from "@/components/ChatInterface";
 import { CampaignBuilder } from "@/components/CampaignBuilder";
 import { Settings } from "@/components/Settings";
-import { CampaignDetails } from "@/components/CampaignDetails";
+import { useNavigate, useParams } from "react-router-dom";
 
 interface IndexProps {
   onLogout: () => void;
@@ -13,6 +13,7 @@ interface IndexProps {
 }
 
 const Index = ({ onLogout, freshLogin }: IndexProps) => {
+  const sidebarRef = useRef<SidebarRef>(null);
   const [activeTab, setActiveTab] = useState(() => {
     // Load the last active tab from localStorage, default to 'chat'
     try {
@@ -41,14 +42,8 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       return null;
     }
   });
-  const [activeCampaignId, setActiveCampaignId] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem('campaigner-active-campaign-id');
-      return saved ? Number(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const navigate = useNavigate();
+  const params = useParams();
 
   // Save active tab to localStorage whenever it changes
   useEffect(() => {
@@ -68,12 +63,32 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }
   }, [isSidebarCollapsed]);
 
+  // Sync URL param conversation id into local state
+  useEffect(() => {
+    const urlId = params.id ? Number(params.id) : null;
+    if (urlId !== activeConversationId) {
+      setActiveConversationId(urlId);
+      if (urlId) {
+        try { localStorage.setItem('neel-taylor-conversation-id', String(urlId)); } catch {}
+      } else {
+        try { localStorage.removeItem('neel-taylor-conversation-id'); } catch {}
+      }
+    }
+  }, [params.id, activeConversationId]);
+
   const renderContent = () => {
     switch (activeTab) {
       case 'chat':
-        return <ChatInterface freshLogin={freshLogin} isSidebarCollapsed={isSidebarCollapsed} initialConversationId={activeConversationId} onConversationIdChange={setActiveConversationId} />;
+        return <ChatInterface key={activeConversationId ?? 'new'} freshLogin={freshLogin} isSidebarCollapsed={isSidebarCollapsed} initialConversationId={activeConversationId} onConversationIdChange={(id) => {
+          setActiveConversationId(id);
+          // Refresh sidebar conversations when a new conversation is created
+          if (id) {
+            sidebarRef.current?.refreshConversations({ silent: true });
+            navigate(`/conversations/${id}`);
+          }
+        }} />;
       case 'campaigns':
-        return <CampaignBuilder selectedCampaignId={activeCampaignId} />;
+        return <CampaignBuilder />;
       case 'analytics':
         return <Dashboard />;
       case 'settings':
@@ -257,6 +272,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar 
+        ref={sidebarRef}
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
         onLogout={onLogout} 
@@ -264,24 +280,16 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
         onSelectConversation={(id) => {
           setActiveConversationId(id);
           try { localStorage.setItem('neel-taylor-conversation-id', String(id)); } catch {}
+          navigate(`/conversations/${id}`);
         }}
         onSelectCampaign={(id) => {
-          setActiveCampaignId(id);
-          try { localStorage.setItem('campaigner-active-campaign-id', String(id)); } catch {}
+          navigate(`/campaigns/${id}`);
         }}
       />
       <main className={`${isSidebarCollapsed ? 'ml-16' : 'ml-64'} transition-all duration-300 overflow-auto min-h-screen`}>
         {renderContent()}
       </main>
-      {activeCampaignId !== null && (
-        <CampaignDetails
-          campaignId={activeCampaignId}
-          onClose={() => {
-            setActiveCampaignId(null);
-            try { localStorage.removeItem('campaigner-active-campaign-id'); } catch {}
-          }}
-        />
-      )}
+      {/* Campaign details modal removed in favor of dedicated route */}
     </div>
   );
 };
