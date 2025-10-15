@@ -171,3 +171,15 @@
     transition: var(--transition-bounce);
   }
 }
+
+
+#chat-input-area::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #020817;
+  z-index: -1;
+}

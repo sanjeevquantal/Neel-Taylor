@@ -446,12 +446,10 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       </div>
 
       {/* Fixed Input Area at Bottom */}
-      <div className={`fixed bottom-0 right-0 border-border/50 p-4 bg-transparent z-40 transition-all duration-300 ${
-        isSidebarCollapsed ? 'left-16' : 'left-64'
-      }`}>
-        <div className="max-w-2xl mx-auto">
+      <div className={`fixed bottom-0 right-0 border-border/50 p-4 pb-0 mb-4 bg-transparent z-40 transition-all duration-300 ${isSidebarCollapsed ? 'left-16' : 'left-64'}`} id="chat-input-area">
+        <div className="max-w-3xl mx-auto">
           <div className="relative">
-            <div className="flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20">
+            <div className="flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20 ">
               {/* Input field */}
               <Textarea
                 value={input}
@@ -502,9 +500,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               </div>
             </div>
           </div>
-          {/*<div className="flex items-center justify-center mt-3 text-xs text-muted-foreground">
+          {/* <div className="flex items-center justify-center mt-3 text-xs text-muted-foreground">
             <span> Enter to send, Shift + Enter for new line</span>
-          </div>*/}
+          </div> */}
         </div>
       </div>
     </div>
