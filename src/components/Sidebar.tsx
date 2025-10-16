@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useImperativeHandle, forwardRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ type ConversationItem = {
 };
 
 export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }, ref) => {
+  const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
@@ -55,11 +57,11 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
   };
 
   const navItems = [
-    { id: 'chat', label: 'AI Chat', icon: MessageSquare },
-    { id: 'campaigns', label: 'Campaigns', icon: Target },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'conversations', label: 'Conversations', icon: History },
+    { id: 'chat', label: 'AI Chat', icon: MessageSquare, path: '/' },
+    { id: 'campaigns', label: 'Campaigns', icon: Target, path: '/campaigns' },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
+    { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
+    { id: 'conversations', label: 'Conversations', icon: History, path: '/conversations' },
   ];
 
   // Function to fetch conversations
@@ -76,7 +78,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
         else localStorage.setItem('campaigner-user-id', String(userId));
       } catch {}
 
-      const data = await apiClient.get<any>(`/users/${userId}/conversations`);
+      const data = await apiClient.get<any>(`/conversations/?load_messages=false`);
       // Normalize possible shapes: array of objects, array of strings, or object with "items"
       let items: ConversationItem[] = [];
       if (Array.isArray(data)) {
@@ -132,17 +134,17 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
           else localStorage.setItem('campaigner-user-id', String(userId));
         } catch {}
 
-        const data = await apiClient.get<any>(`/users/${userId}/campaigns`);
+        const data = await apiClient.get<any>(`/campaigns/?load_leads=false&load_email_sequence=false`);
         let items: Array<{ id: number; name: string }> = [];
         if (Array.isArray(data)) {
           items = data.map((it: any, idx: number) => ({
             id: Number(it?.id ?? idx + 1),
-            name: String(it?.name ?? it?.title ?? `Campaign ${idx + 1}`),
+            name: `Campaign ${it?.id ?? idx + 1}`,
           }));
         } else if (data && Array.isArray((data as any).items)) {
           items = (data as any).items.map((it: any, idx: number) => ({
             id: Number(it?.id ?? idx + 1),
-            name: String(it?.name ?? it?.title ?? `Campaign ${idx + 1}`),
+            name: `Campaign ${it?.id ?? idx + 1}`,
           }));
         } else if (typeof data === 'string') {
           items = [{ id: 1, name: data }];
@@ -222,7 +224,10 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
                 ? 'bg-gradient-primary shadow-soft text-primary-foreground' 
                 : 'hover:bg-muted/50'
             }`}
-            onClick={() => onTabChange(item.id)}
+            onClick={() => {
+              navigate(item.path);
+              onTabChange(item.id);
+            }}
           >
             <item.icon className="w-4 h-4" />
             {!isCollapsed && (

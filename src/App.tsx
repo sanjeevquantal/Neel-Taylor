@@ -1,17 +1,28 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
 import Index from "./pages/Index";
 import Campaign from "./pages/Campaign";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import { PageLoadingSpinner } from "@/components/LoadingSpinner";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { campaignLoader, conversationLoader } from "./lib/loaders";
 
 const queryClient = new QueryClient();
 
-const App = () => {
+// Authentication context for the app
+const AuthContext = React.createContext<{
+  isAuthenticated: boolean;
+  isFreshLogin: boolean;
+  handleLogin: () => void;
+  handleLogout: () => void;
+} | null>(null);
+
+const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     // Check localStorage for existing authentication on app load
     try {
@@ -52,37 +63,96 @@ const App = () => {
   };
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route 
-              path="/" 
-              element={
-                isAuthenticated ? <Index onLogout={handleLogout} freshLogin={isFreshLogin} /> : <Login onLogin={handleLogin} />
-              }
-            />
-            <Route 
-              path="/conversations/:id" 
-              element={
-                isAuthenticated ? <Index onLogout={handleLogout} freshLogin={isFreshLogin} /> : <Login onLogin={handleLogin} />
-              }
-            />
-            <Route
-              path="/campaigns/:id"
-              element={
-                isAuthenticated ? <Campaign /> : <Login onLogin={handleLogin} />
-              }
-            />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <AuthContext.Provider value={{ isAuthenticated, isFreshLogin, handleLogin, handleLogout }}>
+      {children}
+    </AuthContext.Provider>
   );
+};
+
+// Hook to use auth context
+const useAuth = () => {
+  const context = React.useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+// Protected route wrapper
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, handleLogin, handleLogout, isFreshLogin } = useAuth();
+  
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLogin} />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Layout component for authenticated routes
+const AuthenticatedLayout = () => {
+  const { handleLogout, isFreshLogin } = useAuth();
+  return <Index onLogout={handleLogout} freshLogin={isFreshLogin} />;
+};
+
+// Create the router
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: (
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <AuthProvider>
+            <Outlet />
+          </AuthProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    ),
+    children: [
+      {
+        path: "/",
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
+        path: "/conversations/:id",
+        loader: conversationLoader,
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>,
+        errorElement: <ErrorBoundary />
+      },
+      {
+        path: "/campaigns",
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
+        path: "/campaigns/:id",
+        loader: campaignLoader,
+        element: <ProtectedRoute><Campaign /></ProtectedRoute>,
+        errorElement: <ErrorBoundary />
+      },
+      {
+        path: "/analytics",
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
+        path: "/settings",
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
+        path: "/conversations",
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
+        path: "*",
+        element: <NotFound />
+      }
+    ]
+  }
+]);
+
+const App = () => {
+  return <RouterProvider router={router} />;
 };
 
 export default App;

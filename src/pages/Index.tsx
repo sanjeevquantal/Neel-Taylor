@@ -5,7 +5,8 @@ import { Dashboard } from "@/components/Dashboard";
 import { ChatInterface } from "@/components/ChatInterface";
 import { CampaignBuilder } from "@/components/CampaignBuilder";
 import { Settings } from "@/components/Settings";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation, useLoaderData } from "react-router-dom";
+import { ConversationLoaderData } from "@/lib/loaders";
 
 interface IndexProps {
   onLogout: () => void;
@@ -14,16 +15,24 @@ interface IndexProps {
 
 const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const sidebarRef = useRef<SidebarRef>(null);
-  const [activeTab, setActiveTab] = useState(() => {
-    // Load the last active tab from localStorage, default to 'chat'
-    try {
-      const savedTab = localStorage.getItem('campaigner-active-tab');
-      return savedTab || 'chat';
-    } catch (error) {
-      console.error('Error loading active tab:', error);
-      return 'chat';
-    }
-  });
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Get loader data if available (for conversation routes)
+  const loaderData = useLoaderData() as ConversationLoaderData | undefined;
+  
+  // Determine active tab from URL
+  const getActiveTabFromPath = (pathname: string) => {
+    if (pathname === '/') return 'chat';
+    if (pathname.startsWith('/conversations/')) return 'chat';
+    if (pathname === '/campaigns') return 'campaigns';
+    if (pathname === '/analytics') return 'analytics';
+    if (pathname === '/settings') return 'settings';
+    if (pathname === '/conversations') return 'conversations';
+    return 'chat'; // default fallback
+  };
+
+  const [activeTab, setActiveTab] = useState(() => getActiveTabFromPath(location.pathname));
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     // Load the sidebar collapsed state from localStorage, default to false
     try {
@@ -35,6 +44,10 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }
   });
   const [activeConversationId, setActiveConversationId] = useState<number | null>(() => {
+    // Use loader data if available, otherwise fall back to localStorage
+    if (loaderData?.id) {
+      return loaderData.id;
+    }
     try {
       const saved = localStorage.getItem('neel-taylor-conversation-id');
       return saved ? Number(saved) : null;
@@ -42,8 +55,15 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       return null;
     }
   });
-  const navigate = useNavigate();
   const params = useParams();
+
+  // Update active tab when URL changes
+  useEffect(() => {
+    const newActiveTab = getActiveTabFromPath(location.pathname);
+    if (newActiveTab !== activeTab) {
+      setActiveTab(newActiveTab);
+    }
+  }, [location.pathname, activeTab]);
 
   // Save active tab to localStorage whenever it changes
   useEffect(() => {
@@ -66,15 +86,18 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   // Sync URL param conversation id into local state
   useEffect(() => {
     const urlId = params.id ? Number(params.id) : null;
-    if (urlId !== activeConversationId) {
-      setActiveConversationId(urlId);
-      if (urlId) {
-        try { localStorage.setItem('neel-taylor-conversation-id', String(urlId)); } catch {}
+    // Use loader data if available, otherwise use URL param
+    const conversationId = loaderData?.id || urlId;
+    
+    if (conversationId !== activeConversationId) {
+      setActiveConversationId(conversationId);
+      if (conversationId) {
+        try { localStorage.setItem('neel-taylor-conversation-id', String(conversationId)); } catch {}
       } else {
         try { localStorage.removeItem('neel-taylor-conversation-id'); } catch {}
       }
     }
-  }, [params.id, activeConversationId]);
+  }, [params.id, activeConversationId, loaderData?.id]);
 
   const renderContent = () => {
     switch (activeTab) {

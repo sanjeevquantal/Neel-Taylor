@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useParams, useNavigate, useLoaderData } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import apiClient from "@/lib/api";
+import { CampaignLoaderData } from "@/lib/loaders";
 
 type CampaignResponse = {
   id?: number;
@@ -32,39 +32,17 @@ const CampaignPage = () => {
   const params = useParams();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [data, setData] = useState<CampaignResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  
+  // Get data from loader
+  const data = useLoaderData() as CampaignLoaderData;
   const campaignId = Number(params.id);
-
-  useEffect(() => {
-    if (!campaignId || Number.isNaN(campaignId)) return;
-    const run = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const resp = await apiClient.get<CampaignResponse>(`/campaigns/${campaignId}`);
-        setData(resp);
-      } catch (err: any) {
-        setError(err?.message || "Failed to load campaign");
-      } finally {
-        setLoading(false);
-      }
-    };
-    run();
-  }, [campaignId]);
 
   return (
     <div className="min-h-screen bg-background">
       <Sidebar 
         activeTab="campaigns" 
         onTabChange={(tab) => {
-          if (tab === 'campaigns') {
-            navigate('/');
-          } else {
-            navigate('/');
-          }
+          // Navigation is handled by the sidebar itself now
         }}
         onLogout={() => {
           // simple redirect on logout; App guards routes
@@ -86,37 +64,33 @@ const CampaignPage = () => {
 
           <Card className="bg-gradient-card shadow-soft">
             <div className="p-4 border-b border-border/50">
-              {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
-              {error && <div className="text-sm text-destructive">{error}</div>}
-              {!loading && !error && (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold">Campaign #{data?.id || campaignId}</h3>
-                      <div className="text-xs text-muted-foreground">
-                        Created: {data?.created_at ? new Date(data.created_at).toLocaleDateString() : '—'}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant={data?.status === 'scheduled' ? 'default' : 'secondary'}>
-                        {data?.status || 'Unknown'}
-                      </Badge>
-                    {data?.conversation_id && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        className="h-8 px-2 text-primary hover:text-primary/80"
-                        onClick={() => navigate(`/conversations/${data.conversation_id}`)}
-                        title={`View Conversation #${data.conversation_id}`}
-                      >
-                        <span className="mr-1">View conversation</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    )}
+              <div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Campaign #{data?.id || campaignId}</h3>
+                    <div className="text-xs text-muted-foreground">
+                      Created: {data?.created_at ? new Date(data.created_at).toLocaleDateString() : '—'}
                     </div>
                   </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={data?.status === 'scheduled' ? 'default' : 'secondary'}>
+                      {data?.status || 'Unknown'}
+                    </Badge>
+                  {data?.conversation_id && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      className="h-8 px-2 text-primary hover:text-primary/80"
+                      onClick={() => navigate(`/conversations/${data.conversation_id}`)}
+                      title={`View Conversation #${data.conversation_id}`}
+                    >
+                      <span className="mr-1">View conversation</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  )}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="p-4 space-y-6">
