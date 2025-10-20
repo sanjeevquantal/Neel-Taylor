@@ -9,39 +9,94 @@ import {
   Bot, 
   User, 
   Sparkles,
-  Paperclip
+  Paperclip,
+  X
 } from "lucide-react";
 import apiClient from "@/lib/api";
 import { UploadModal } from "@/components/UploadModal";
 
-// Simple markdown parser for basic formatting
+// Simple but structured markdown parser for chat messages
 const parseMarkdown = (text: string) => {
-  return text
-    // Bold text: **text** -> <strong>text</strong>
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Italic text: *text* -> <em>text</em>
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    // Code: `text` -> <code>text</code>
-    .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-xs">$1</code>')
-    // Links: [text](url) -> <a href="url">text</a>
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">$1</a>')
-    // Line breaks: \n -> <br>
-    .replace(/\n/g, '<br>')
-    // Headers: # text -> <h3>text</h3>
-    .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold mt-2 mb-1">$1</h3>')
-    .replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold mt-3 mb-2">$1</h2>')
-    .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-4 mb-3">$1</h1>')
-    // Lists: - item -> <li>item</li>
-    .replace(/^- (.*$)/gim, '<li class="ml-4">$1</li>')
-    // Wrap lists in <ul> tags
-    .replace(/(<li.*<\/li>)/g, '<ul class="list-disc ml-4 my-2">$1</ul>');
+  // Helpers for inline formatting
+  const applyInline = (line: string) =>
+    line
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-xs">$1</code>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">$1</a>');
+
+  const lines = text.split(/\r?\n/);
+  const htmlParts: string[] = [];
+  // Track open list levels (0 = root ul)
+  let openLevel = 0;
+  const closeListsTo = (level: number) => {
+    while (openLevel > level) {
+      htmlParts.push('</ul>');
+      openLevel -= 1;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/g, '');
+
+    // Headers
+    const h3 = line.match(/^###\s+(.*)$/);
+    if (h3) {
+      closeListsTo(0);
+      htmlParts.push(`<h3 class="text-lg font-semibold mt-2 mb-1">${applyInline(h3[1])}</h3>`);
+      continue;
+    }
+    const h2 = line.match(/^##\s+(.*)$/);
+    if (h2) {
+      closeListsTo(0);
+      htmlParts.push(`<h2 class="text-xl font-semibold mt-3 mb-2">${applyInline(h2[1])}</h2>`);
+      continue;
+    }
+    const h1 = line.match(/^#\s+(.*)$/);
+    if (h1) {
+      closeListsTo(0);
+      htmlParts.push(`<h1 class="text-2xl font-bold mt-4 mb-3">${applyInline(h1[1])}</h1>`);
+      continue;
+    }
+
+    // List items (support simple nested lists with two-space indent)
+    const li = line.match(/^(\s*)-\s+(.*)$/);
+    if (li) {
+      const spaces = li[1].length;
+      const level = spaces >= 2 ? 2 : 1; // 1 => top-level, 2 => nested
+      const desiredOpen = level; // we keep level count equal to nesting depth
+      if (desiredOpen > openLevel) {
+        for (let i = openLevel; i < desiredOpen; i++) {
+          const margin = i === 0 ? 'ml-4' : 'ml-8';
+          htmlParts.push(`<ul class="list-disc ${margin} my-2">`);
+        }
+        openLevel = desiredOpen;
+      } else if (desiredOpen < openLevel) {
+        closeListsTo(desiredOpen);
+      }
+      htmlParts.push(`<li>${applyInline(li[2])}</li>`);
+      continue;
+    }
+
+    // Blank line -> close lists and add spacing
+    if (!line.trim()) {
+      closeListsTo(0);
+      htmlParts.push('<div class="h-2"></div>');
+      continue;
+    }
+
+    // Paragraph
+    closeListsTo(0);
+    htmlParts.push(`<p class="mb-2">${applyInline(line)}</p>`);
+  }
+
+  // Close any remaining lists
+  closeListsTo(0);
+  return htmlParts.join('');
 };
 
 // New interface for API request
-interface APIRequest {
-  query: string;
-  conversation_id?: number | null;
-}
+// Requests are sent as multipart/form-data with a string field `chat_req`
 
 // New interface for API response
 interface APIResponse {
@@ -49,6 +104,7 @@ interface APIResponse {
   msg: string;
   total_time: string;
   conversation_id: number;
+  knowledge_base_uploaded?: boolean;
 }
 
 // Display message interface
@@ -58,6 +114,7 @@ interface Message {
   content: string;
   timestamp: Date;
   persona?: string;
+  hasFile?: boolean;
 }
 
 interface ChatInterfaceProps {
@@ -65,9 +122,10 @@ interface ChatInterfaceProps {
   isSidebarCollapsed?: boolean;
   initialConversationId?: number | null;
   onConversationIdChange?: (id: number | null) => void;
+  onNewChat?: () => void;
 }
 
-export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange }: ChatInterfaceProps) => {
+export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange, onNewChat }: ChatInterfaceProps) => {
   // Array of welcome messages to randomly select from
   // const welcomeMessages = [
   //   "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
@@ -115,9 +173,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     setMessages([]);
     setConversationId(null);
     setIsInitialTyping(false);
-    localStorage.removeItem('neel-taylor-conversation-history');
-    localStorage.removeItem('campaigner-chat-display');
-    localStorage.removeItem('neel-taylor-conversation-id');
+    setConversationHasFile(false); // Reset file upload flag for new chat
+    onNewChat?.();
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -125,7 +182,25 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [selectedPersona, setSelectedPersona] = useState<string>('cto');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [conversationHasFile, setConversationHasFile] = useState(false);
+  const [attachedUrl, setAttachedUrl] = useState<string>('');
+
+  // Debug state changes
+  useEffect(() => {
+    console.log('Uploaded file state changed:', uploadedFile);
+  }, [uploadedFile]);
+
+  useEffect(() => {
+    console.log('Is uploading file state changed:', isUploadingFile);
+  }, [isUploadingFile]);
+
+  useEffect(() => {
+    console.log('Conversation has file state changed:', conversationHasFile);
+  }, [conversationHasFile]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -163,6 +238,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   // Load full conversation history when conversationId changes (from sidebar selection)
   useEffect(() => {
     const loadHistory = async (id: number) => {
+      setIsLoadingHistory(true);
       setIsInitialTyping(false);
       setIsTyping(false);
       // Clear existing messages immediately so previous conversation disappears
@@ -177,10 +253,44 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           type: (m?.role === 'assistant' || m?.type === 'assistant') ? 'assistant' : 'user',
           content: String(m?.content ?? m?.text ?? m ?? ''),
           timestamp: new Date(m?.created_at ?? m?.timestamp ?? Date.now()),
+          hasFile: m?.has_file || m?.hasFile || false, // Check if backend stores this info
         }));
         setMessages(mapped);
+        
+        // Check if this conversation has had any file uploads
+        // Look for hasFile property first, then fallback to content patterns
+        const hasFileContent = mapped.some(msg => {
+          // First check if the message has the hasFile property
+          if (msg.hasFile) return true;
+          
+          // Fallback to content pattern detection
+          const content = msg.content.toLowerCase();
+          return content.includes('file_content') || 
+                 content.includes('uploaded file') ||
+                 content.includes('file uploaded') ||
+                 content.includes('analyze the uploaded') ||
+                 content.includes('based on its content') ||
+                 content.includes('document you') ||
+                 content.includes('file you') ||
+                 (msg.type === 'user' && (
+                   content.includes('analyze') && content.includes('file') ||
+                   content.includes('upload') && content.includes('document')
+                 )) ||
+                 (msg.type === 'assistant' && (
+                   content.includes('file') && content.includes('uploaded') ||
+                   content.includes('document') && content.includes('content')
+                 ));
+        });
+        console.log('Checking conversation for file uploads:', { hasFileContent, messageCount: mapped.length, messages: mapped.map(m => ({ type: m.type, hasFile: m.hasFile, content: m.content.substring(0, 50) })) });
+        if (typeof (data as any)?.knowledge_base_uploaded === 'boolean') {
+          setConversationHasFile((data as any).knowledge_base_uploaded);
+        } else {
+          setConversationHasFile(hasFileContent);
+        }
       } catch (err) {
         console.error('Failed to load conversation history', err);
+      } finally {
+        setIsLoadingHistory(false);
       }
     };
 
@@ -188,6 +298,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       void loadHistory(conversationId);
     } else {
       setMessages([]);
+      setIsLoadingHistory(false);
     }
   }, [conversationId]);
 
@@ -219,16 +330,27 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     setIsTyping(true);
 
     try {
-      // Prepare the API request - backend will load history from DB
-      const apiRequest: APIRequest = { query: content };
-      if (conversationId) {
-        apiRequest.conversation_id = conversationId;
+      const formData = new FormData();
+      formData.append('query', content);
+      formData.append('conversation_id', String(conversationId || 0));
+      if (attachedUrl) {
+        formData.append('URL', attachedUrl);
+        formData.append('conversation_id', String(conversationId || 0));
+      }
+      if (uploadedFile) {
+        formData.append('file', uploadedFile);
       }
 
-      console.log('Sending API request:', apiRequest);
+      // Debug: log exact multipart payload
+      const debugEntries1: Record<string, unknown> = {};
+      formData.forEach((value, key) => {
+        debugEntries1[key] = value instanceof File 
+          ? { kind: 'file', name: value.name, size: value.size, type: value.type }
+          : value;
+      });
+      console.log('POST /chat payload', debugEntries1);
 
-      // Call the API via client to backend /api/chat
-      const data = await apiClient.post<APIResponse>('/chat', apiRequest);
+      const data = await apiClient.post<APIResponse>('/chat', formData);
       console.log('Received API response:', data);
       
       const aiResponse: Message = {
@@ -241,10 +363,16 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setMessages(prev => [...prev, aiResponse]);
 
       // Persist conversation id from response if present
-      if (data.conversation_id && !conversationId) {
+      if (data.conversation_id) {
         setConversationId(data.conversation_id);
         onConversationIdChange?.(data.conversation_id);
-        try { localStorage.setItem('neel-taylor-conversation-id', String(data.conversation_id)); } catch {}
+      }
+      if (typeof data.knowledge_base_uploaded === 'boolean') {
+        setConversationHasFile(data.knowledge_base_uploaded);
+        if (data.knowledge_base_uploaded) {
+          setAttachedUrl('');
+          setIsUploadingFile(false);
+        }
       }
     } catch (error) {
       console.error('Error calling API:', error);
@@ -270,24 +398,41 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       type: 'user',
       content: input,
       timestamp: new Date(),
-      persona: selectedPersona
+      persona: selectedPersona,
+      hasFile: !!uploadedFile
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    console.log('Clearing uploaded file before sending');
+    setUploadedFile(null); // Clear file immediately when sending
+    if (uploadedFile) {
+      setConversationHasFile(true); // Mark conversation as having had a file
+    }
     setIsTyping(true);
 
     try {
-      // Prepare the API request - backend will load history from DB
-      const apiRequest: APIRequest = { query: input };
-      if (conversationId) {
-        apiRequest.conversation_id = conversationId;
+      const formData = new FormData();
+      formData.append('query', input);
+      formData.append('conversation_id', String(conversationId || 0));
+      if (attachedUrl) {
+        formData.append('URL', attachedUrl);
+        formData.append('conversation_id', String(conversationId || 0));
+      }
+      if (uploadedFile) {
+        formData.append('file', uploadedFile);
       }
 
-      console.log('Sending API request:', apiRequest);
+      // Debug: log exact multipart payload
+      const debugEntries2: Record<string, unknown> = {};
+      formData.forEach((value, key) => {
+        debugEntries2[key] = value instanceof File 
+          ? { kind: 'file', name: value.name, size: value.size, type: value.type }
+          : value;
+      });
+      console.log('POST /chat payload', debugEntries2);
 
-      // Call the API via client to backend /api/chat
-      const data = await apiClient.post<APIResponse>('/chat', apiRequest);
+      const data = await apiClient.post<APIResponse>('/chat', formData);
       console.log('Received API response:', data);
       
       const aiResponse: Message = {
@@ -300,10 +445,16 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setMessages(prev => [...prev, aiResponse]);
 
       // Persist conversation id from response if present
-      if (data.conversation_id && !conversationId) {
+      if (data.conversation_id) {
         setConversationId(data.conversation_id);
         onConversationIdChange?.(data.conversation_id);
-        try { localStorage.setItem('neel-taylor-conversation-id', String(data.conversation_id)); } catch {}
+      }
+      if (typeof data.knowledge_base_uploaded === 'boolean') {
+        setConversationHasFile(data.knowledge_base_uploaded);
+        if (data.knowledge_base_uploaded) {
+          setAttachedUrl('');
+          setIsUploadingFile(false);
+        }
       }
     } catch (error) {
       console.error('Error calling API:', error);
@@ -321,18 +472,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     }
   };
 
-  const handleUploadSuccess = (content: string) => {
-    // Create a user message that mirrors ChatGPT's behavior of showing the raw content
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content,
-      timestamp: new Date(),
-      persona: selectedPersona
-    };
-    setMessages(prev => [...prev, userMessage]);
-    // Immediately send to backend using helper that accepts provided content
-    void sendMessageWithContent(content);
+  const handleFileSelected = (file: File) => {
+    setUploadedFile(file);
+    setIsUploadingFile(false);
   };
 
   return (
@@ -348,7 +490,11 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             </div>
             <div>
               <h2 className="text-xl font-semibold">AI Campaign Creator</h2>
-              <p className="text-sm text-muted-foreground">Chat with AI to generate marketing campaigns</p>
+              {messages.length === 0 && !isLoadingHistory ? (
+                <p className="text-sm text-muted-foreground">Welcome! Share your company info or upload a document to get started</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Chat with AI to generate marketing campaigns</p>
+              )}
             </div>
           </div>
           <Button variant="outline" onClick={startNewChat} className="h-10 px-4">
@@ -361,6 +507,24 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       {/* Messages - with bottom padding for fixed input; centered like ChatGPT */}
       <div ref={listRef} className="flex-1 overflow-y-auto p-4 pb-32">
         <div className="max-w-2xl mx-auto space-y-4">
+        {/* Empty state when there are no messages */}
+        {messages.length === 0 && !isLoadingHistory && !isInitialTyping && !isTyping && (
+          <div className="flex flex-col items-center justify-center text-center py-16 px-6 select-none">
+            <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center shadow-glow mb-4">
+              <Sparkles className="w-6 h-6 text-primary-foreground" />
+            </div>
+            <h3 className="text-2xl font-semibold mb-2">Welcome to CampAIgn AI</h3>
+            <p className="text-muted-foreground max-w-xl mb-6">
+              Share your company information (About page link) or upload a brief document. Then ask the AI to create a marketing campaign, email sequence, or outreach copy tailored to your brand.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+              <Button variant="outline" onClick={() => setInput("Create a cold email introducing our product to CTOs at SaaS startups")}>Try: Cold email for CTOs</Button>
+              <Button variant="outline" onClick={() => setInput("Draft a 4-step nurture sequence for trial users of our SaaS")}>Try: Nurture sequence</Button>
+              <Button variant="outline" onClick={() => setInput("Summarize the key value props from our website and craft a LinkedIn outreach message")}>Try: LinkedIn outreach</Button>
+              <Button variant="outline" onClick={() => setInput("Generate a launch announcement email for our new feature with CTA")}>Try: Feature launch email</Button>
+            </div>
+          </div>
+        )}
         {/* Initial typing animation */}
         {isInitialTyping && (
           <div className="flex items-start space-x-3">
@@ -379,6 +543,26 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             </Card>
           </div>
         )}
+
+        {/* Loading conversation history */}
+        {isLoadingHistory && (
+          <div className="flex items-start space-x-3">
+            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+              <Bot className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <Card className="p-4 shadow-soft bg-gradient-card">
+              <div className="flex items-center space-x-2">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                </div>
+                <span className="text-sm text-muted-foreground">Loading conversation...</span>
+              </div>
+            </Card>
+          </div>
+        )}
+
 
         {messages.map((message) => (
           <div
@@ -404,7 +588,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                 : 'bg-gradient-card'
             }`}>
               <div className="flex items-center justify-between mb-2">
-                <div className={`flex items-center ${message.type === 'user' && message.content.length < 10 ? 'space-x-8' : 'space-x-6'}`}>
+                <div className="flex items-center space-x-2">
                   <span className="font-medium">
                     {message.type === 'user' ? 'You' : 'CampAIgn AI'}
                   </span>
@@ -414,12 +598,23 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                     </Badge>
                   )}
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {message.timestamp.toLocaleTimeString()}
+                <span className="text-xs text-muted-foreground ml-4">
+                  {message.timestamp.toLocaleTimeString('en-US', { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true
+                  })}
                 </span>
               </div>
               <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
-              {/* Upload UI removed */}
+              {message.hasFile && (
+                <div className="mt-3 pt-3 border-t border-border/30">
+                  <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                    <Paperclip className="w-3 h-3" />
+                    <span>File attached</span>
+                  </div>
+                </div>
+              )}
             </Card>
           </div>
         ))}
@@ -448,6 +643,62 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       {/* Fixed Input Area at Bottom */}
       <div className={`fixed bottom-0 right-0 border-border/50 p-4 pb-0 mb-4 bg-transparent z-40 transition-all duration-300 ${isSidebarCollapsed ? 'left-16' : 'left-64'}`} id="chat-input-area">
         <div className="max-w-3xl mx-auto">
+          {/* Uploaded File Display - Only show current session file */}
+          {uploadedFile && !conversationHasFile && (
+            <div key={`file-${uploadedFile.name}`} className="mb-3 p-3 bg-muted rounded-lg border border-input">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-red-500 rounded flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">PDF</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium truncate max-w-xs">
+                      {uploadedFile.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Ready to analyze
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setUploadedFile(null)}
+                  className="h-6 w-6 p-0"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+          {/* Attached URL display */}
+          {attachedUrl && (
+            <div className="mb-3 p-3 bg-muted rounded-lg border border-input">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-blue-500 rounded flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">URL</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium truncate max-w-xs">
+                      {attachedUrl}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Will be sent with your next message
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setAttachedUrl('')}
+                  className="h-6 w-6 p-0"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="relative">
             <div className="flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20 ">
               {/* Input field */}
@@ -476,12 +727,23 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               
               {/* Right side actions */}
               <div className="flex items-center space-x-2 ml-3">
-                <UploadModal onUploadSuccess={handleUploadSuccess}>
+                <UploadModal 
+                  onFileSelected={(file) => { setIsUploadingFile(true); handleFileSelected(file); }}
+                  onLinkSelected={(url) => { setAttachedUrl(url); setIsUploadingFile(false); }}
+                  hasUploadedFile={!!uploadedFile || isUploadingFile || conversationHasFile}
+                >
                   <Button 
                     variant="ghost" 
                     size="sm"
                     className="h-8 w-8 p-0 hover:bg-muted-foreground/10"
-                    title="Upload file or link"
+                    title={
+                      conversationHasFile
+                        ? "A knowledge base is already attached to this conversation"
+                        : (isUploadingFile || uploadedFile)
+                        ? "Uploading..."
+                        : "Upload file or link"
+                    }
+                    disabled={isUploadingFile || !!uploadedFile || conversationHasFile}
                   >
                     <Paperclip className="w-4 h-4" />
                   </Button>

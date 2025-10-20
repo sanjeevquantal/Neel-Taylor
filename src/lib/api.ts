@@ -5,7 +5,7 @@ export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 const getBaseUrl = (): string => {
   const envUrl = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   // Fallback to Render backend if not configured
-  return (envUrl?.replace(/\/$/, "")) || "https://neeltaylor-ifob.onrender.com/api";
+  return envUrl || "https://neeltaylor-ifob.onrender.com/api";
 };
 
 const getAuthToken = (): string | undefined => {
@@ -36,9 +36,13 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   const url = options.absolute ? path : `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers || {}),
   };
+
+  // Only set Content-Type for JSON requests
+  if (options.body && !(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
 
   const token = getAuthToken();
   if (token) {
@@ -48,7 +52,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   const response = await fetch(url, {
     method: options.method || "GET",
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: options.body !== undefined ? (options.body instanceof FormData ? options.body : JSON.stringify(options.body)) : undefined,
     signal: options.signal,
     credentials: "omit",
   });
@@ -75,8 +79,16 @@ export const apiClient = {
     apiFetch<T>(path, { ...(options || {}), method: "PATCH", body }),
   delete: <T = unknown>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
     apiFetch<T>(path, { ...(options || {}), method: "DELETE" }),
+  uploadFile: <T = unknown>(path: string, file: File, conversationId?: number, options?: Omit<RequestOptions, "method" | "body">) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // Add conversation_id as query parameter
+    const queryParams = conversationId ? `?conversation_id=${conversationId}` : '';
+    const fullPath = `${path}${queryParams}`;
+    
+    return apiFetch<T>(fullPath, { ...(options || {}), method: "POST", body: formData });
+  },
 };
 
 export default apiClient;
-
-

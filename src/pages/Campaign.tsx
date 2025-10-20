@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, useNavigate, useLoaderData } from "react-router-dom";
-import { Sidebar } from "@/components/Sidebar";
+import { Sidebar, SidebarRef } from "@/components/Sidebar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
@@ -31,6 +31,7 @@ type CampaignResponse = {
 const CampaignPage = () => {
   const params = useParams();
   const navigate = useNavigate();
+  const sidebarRef = useRef<SidebarRef>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // Get data from loader
@@ -40,6 +41,7 @@ const CampaignPage = () => {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar 
+        ref={sidebarRef}
         activeTab="campaigns" 
         onTabChange={(tab) => {
           // Navigation is handled by the sidebar itself now
@@ -49,6 +51,12 @@ const CampaignPage = () => {
           navigate('/');
         }}
         onCollapsedChange={setIsSidebarCollapsed}
+        onSelectConversation={(id) => {
+          navigate(`/conversations/${id}`);
+        }}
+        onSelectCampaign={(id) => {
+          navigate(`/campaigns/${id}`);
+        }}
       />
       <main className={`${isSidebarCollapsed ? 'ml-16' : 'ml-64'} transition-all duration-300 overflow-auto min-h-screen p-6`}>
         <div className="max-w-4xl">

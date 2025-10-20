@@ -10,13 +10,16 @@ import {
   DialogTrigger 
 } from "@/components/ui/dialog";
 import { Upload, Link, FileText, X } from "lucide-react";
+// No API calls here anymore; the parent will send the file with the chat request
 
 interface UploadModalProps {
-  onUploadSuccess: (data: string) => void;
+  onFileSelected: (file: File) => void;
+  onLinkSelected?: (url: string) => void;
   children: React.ReactNode;
+  hasUploadedFile?: boolean;
 }
 
-export const UploadModal = ({ onUploadSuccess, children }: UploadModalProps) => {
+export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploadedFile }: UploadModalProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'file' | 'link'>('file');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -29,58 +32,9 @@ export const UploadModal = ({ onUploadSuccess, children }: UploadModalProps) => 
     if (file) {
       setSelectedFile(file);
       setError('');
-    }
-  };
-
-  const handleFileUpload = async () => {
-    if (!selectedFile) {
-      setError('Please select a file');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      const response = await fetch('https://neeltaylor.onrender.com/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('File upload response:', data);
-      
-      // Extract the actual file content from the response
-      let contentToSend = '';
-      if (data.fileContent) {
-        contentToSend = `File: ${data.fileName}\n\nContent:\n${data.fileContent}`;
-      } else if (data.message) {
-        contentToSend = data.message;
-      } else {
-        contentToSend = 'File uploaded but no content extracted';
-      }
-      
-      console.log('File content to send:', contentToSend);
-      
-      // Pass the actual content to chat
-      onUploadSuccess(contentToSend);
-      
-      // Close modal and reset
+      // Immediately pass file to parent and close
+      onFileSelected(file);
       setIsOpen(false);
-      setSelectedFile(null);
-      setError('');
-    } catch (error) {
-      console.error('Upload error:', error);
-      setError('Failed to upload file. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -94,39 +48,14 @@ export const UploadModal = ({ onUploadSuccess, children }: UploadModalProps) => 
     setError('');
 
     try {
-      const response = await fetch(`https://neeltaylor.onrender.com/fetch?url=${encodeURIComponent(linkUrl)}`, {
-        method: 'GET',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Fetch failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('URL fetch response:', data);
-      
-      // Extract the actual URL content from the response
-      let contentToSend = '';
-      if (data.content) {
-        contentToSend = `URL: ${data.url}\n\nContent:\n${data.content}`;
-      } else if (data.message) {
-        contentToSend = data.message;
-      } else {
-        contentToSend = 'URL content fetched but no content extracted';
-      }
-      
-      console.log('URL content to send:', contentToSend);
-      
-      // Pass the actual content to chat
-      onUploadSuccess(contentToSend);
-      
-      // Close modal and reset
+      // Pass URL directly to parent to be sent as multipart field `URL`
+      onLinkSelected?.(linkUrl.trim());
       setIsOpen(false);
       setLinkUrl('');
       setError('');
     } catch (error) {
       console.error('Fetch error:', error);
-      setError('Failed to fetch content from link. Please try again.');
+      setError('Failed to attach URL. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -186,13 +115,22 @@ export const UploadModal = ({ onUploadSuccess, children }: UploadModalProps) => 
                   type="file"
                   accept=".pdf,.docx,.txt"
                   onChange={handleFileSelect}
+                  disabled={hasUploadedFile}
                   className="hidden"
                 />
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  {selectedFile ? (
+                <label htmlFor="file-upload" className={`cursor-pointer ${hasUploadedFile ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  {hasUploadedFile ? (
+                    <div className="space-y-2">
+                      <FileText className="w-8 h-8 mx-auto text-muted-foreground" />
+                      <p className="font-medium text-muted-foreground">File already uploaded</p>
+                      <p className="text-sm text-muted-foreground">
+                        Only one file per conversation allowed
+                      </p>
+                    </div>
+                  ) : selectedFile ? (
                     <div className="space-y-2">
                       <FileText className="w-8 h-8 mx-auto text-primary" />
-                      <p className="font-medium">{selectedFile.name}</p>
+                      <p className="font-medium break-words text-center px-2">{selectedFile.name}</p>
                       <p className="text-sm text-muted-foreground">
                         {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                       </p>
@@ -211,13 +149,7 @@ export const UploadModal = ({ onUploadSuccess, children }: UploadModalProps) => 
             </div>
             
             {selectedFile && (
-              <Button 
-                onClick={handleFileUpload} 
-                disabled={isLoading}
-                className="w-full"
-              >
-                {isLoading ? 'Uploading...' : 'Upload File'}
-              </Button>
+              <div className="text-sm text-muted-foreground">{selectedFile.name} selected</div>
             )}
           </div>
         ) : (

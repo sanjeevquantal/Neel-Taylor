@@ -44,16 +44,11 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }
   });
   const [activeConversationId, setActiveConversationId] = useState<number | null>(() => {
-    // Use loader data if available, otherwise fall back to localStorage
+    // Use loader data if available, otherwise start fresh
     if (loaderData?.id) {
       return loaderData.id;
     }
-    try {
-      const saved = localStorage.getItem('neel-taylor-conversation-id');
-      return saved ? Number(saved) : null;
-    } catch {
-      return null;
-    }
+    return null;
   });
   const params = useParams();
 
@@ -92,9 +87,6 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     if (conversationId !== activeConversationId) {
       setActiveConversationId(conversationId);
       if (conversationId) {
-        try { localStorage.setItem('neel-taylor-conversation-id', String(conversationId)); } catch {}
-      } else {
-        try { localStorage.removeItem('neel-taylor-conversation-id'); } catch {}
       }
     }
   }, [params.id, activeConversationId, loaderData?.id]);
@@ -109,6 +101,9 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             sidebarRef.current?.refreshConversations({ silent: true });
             navigate(`/conversations/${id}`);
           }
+        }} onNewChat={() => {
+          setActiveConversationId(null);
+          navigate('/');
         }} />;
       case 'campaigns':
         return <CampaignBuilder />;
@@ -302,7 +297,6 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
         onCollapsedChange={setIsSidebarCollapsed}
         onSelectConversation={(id) => {
           setActiveConversationId(id);
-          try { localStorage.setItem('neel-taylor-conversation-id', String(id)); } catch {}
           navigate(`/conversations/${id}`);
         }}
         onSelectCampaign={(id) => {
