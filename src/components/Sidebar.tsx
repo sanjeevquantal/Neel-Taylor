@@ -17,7 +17,7 @@ import {
   History,
   LogOut
 } from "lucide-react";
-import apiClient from "@/lib/api";
+import apiClient, { NetworkError } from "@/lib/api";
 
 interface SidebarProps {
   activeTab: string;
@@ -103,7 +103,30 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
       }
       setConversations(items);
     } catch (err: any) {
-      setChatError(err?.message || 'Failed to load conversations');
+      let errorMessage = 'Failed to load conversations';
+      
+      if (err instanceof NetworkError) {
+        switch (err.type) {
+          case 'OFFLINE':
+            errorMessage = 'You appear to be offline. Please check your internet connection.';
+            break;
+          case 'NETWORK_ERROR':
+            errorMessage = 'Unable to connect to the server. Please check your connection.';
+            break;
+          case 'TIMEOUT':
+            errorMessage = 'Request timed out. Please try again.';
+            break;
+          case 'SERVER_ERROR':
+            errorMessage = 'Server error occurred. Please try again later.';
+            break;
+          default:
+            errorMessage = err.message || 'Failed to load conversations';
+        }
+      } else {
+        errorMessage = err?.message || 'Failed to load conversations';
+      }
+      
+      setChatError(errorMessage);
     } finally {
       if (!silent) setIsLoadingChats(false);
     }
@@ -151,7 +174,30 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
         }
         setCampaigns(items);
       } catch (err: any) {
-        setCampaignError(err?.message || 'Failed to load campaigns');
+        let errorMessage = 'Failed to load campaigns';
+        
+        if (err instanceof NetworkError) {
+          switch (err.type) {
+            case 'OFFLINE':
+              errorMessage = 'You appear to be offline. Please check your internet connection.';
+              break;
+            case 'NETWORK_ERROR':
+              errorMessage = 'Unable to connect to the server. Please check your connection.';
+              break;
+            case 'TIMEOUT':
+              errorMessage = 'Request timed out. Please try again.';
+              break;
+            case 'SERVER_ERROR':
+              errorMessage = 'Server error occurred. Please try again later.';
+              break;
+            default:
+              errorMessage = err.message || 'Failed to load campaigns';
+          }
+        } else {
+          errorMessage = err?.message || 'Failed to load campaigns';
+        }
+        
+        setCampaignError(errorMessage);
       } finally {
         setIsLoadingCampaigns(false);
       }

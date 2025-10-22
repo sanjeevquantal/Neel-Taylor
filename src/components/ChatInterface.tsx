@@ -12,7 +12,7 @@ import {
   Paperclip,
   X
 } from "lucide-react";
-import apiClient from "@/lib/api";
+import apiClient, { NetworkError } from "@/lib/api";
 import { UploadModal } from "@/components/UploadModal";
 
 // Simple but structured markdown parser for chat messages
@@ -377,10 +377,31 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     } catch (error) {
       console.error('Error calling API:', error);
       
+      let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
+      
+      if (error instanceof NetworkError) {
+        switch (error.type) {
+          case 'OFFLINE':
+            errorMessage = '🌐 **You appear to be offline.**\n\nPlease check your internet connection and try again.';
+            break;
+          case 'NETWORK_ERROR':
+            errorMessage = '🔌 **Unable to connect to the server.**\n\nThis could be due to:\n• Internet connection issues\n• Server maintenance\n• Network firewall restrictions\n\nPlease check your connection and try again.';
+            break;
+          case 'TIMEOUT':
+            errorMessage = '⏱️ **Request timed out.**\n\nThe server is taking too long to respond. Please try again.';
+            break;
+          case 'SERVER_ERROR':
+            errorMessage = '🚫 **Server error occurred.**\n\nThe server encountered an issue. Please try again in a few moments.';
+            break;
+          default:
+            errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
+        }
+      }
+      
       const errorResponse: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: 'Sorry, I encountered an error while processing your information. Please try again later.',
+        content: errorMessage,
         timestamp: new Date()
       };
       
@@ -459,10 +480,31 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     } catch (error) {
       console.error('Error calling API:', error);
       
+      let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
+      
+      if (error instanceof NetworkError) {
+        switch (error.type) {
+          case 'OFFLINE':
+            errorMessage = '🌐 **You appear to be offline.**\n\nPlease check your internet connection and try again.';
+            break;
+          case 'NETWORK_ERROR':
+            errorMessage = '🔌 **Unable to connect to the server.**\n\nThis could be due to:\n• Internet connection issues\n• Server maintenance\n• Network firewall restrictions\n\nPlease check your connection and try again.';
+            break;
+          case 'TIMEOUT':
+            errorMessage = '⏱️ **Request timed out.**\n\nThe server is taking too long to respond. Please try again.';
+            break;
+          case 'SERVER_ERROR':
+            errorMessage = '🚫 **Server error occurred.**\n\nThe server encountered an issue. Please try again in a few moments.';
+            break;
+          default:
+            errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
+        }
+      }
+      
       const errorResponse: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: 'Sorry, I encountered an error while processing your request. Please try again later.',
+        content: errorMessage,
         timestamp: new Date()
       };
       

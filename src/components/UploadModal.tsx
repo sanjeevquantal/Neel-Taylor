@@ -27,14 +27,40 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const validateFileType = (file: File): boolean => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    
+    const allowedExtensions = ['.pdf', '.docx', '.txt'];
+    const fileName = file.name.toLowerCase();
+    
+    // Check MIME type
+    const isValidMimeType = allowedTypes.includes(file.type);
+    
+    // Check file extension as fallback
+    const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+    
+    return isValidMimeType || hasValidExtension;
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setSelectedFile(file);
-      setError('');
-      // Immediately pass file to parent and close
-      onFileSelected(file);
-      setIsOpen(false);
+      if (validateFileType(file)) {
+        setSelectedFile(file);
+        setError('');
+        // Immediately pass file to parent and close
+        onFileSelected(file);
+        setIsOpen(false);
+      } else {
+        setError('File type not supported. Please upload only PDF, DOCX, or TXT files.');
+        setSelectedFile(null);
+        // Clear the input
+        event.target.value = '';
+      }
     }
   };
 

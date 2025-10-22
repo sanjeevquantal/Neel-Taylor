@@ -31,6 +31,14 @@ export interface RequestOptions {
   absolute?: boolean;
 }
 
+// Custom error types for better error handling
+export class NetworkError extends Error {
+  constructor(message: string, public type: 'NETWORK_ERROR' | 'TIMEOUT' | 'OFFLINE' | 'SERVER_ERROR' | 'UNKNOWN') {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+
 export async function apiFetch<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
   const baseUrl = getBaseUrl();
   const url = options.absolute ? path : `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
@@ -49,25 +57,63 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    headers,
-    body: options.body !== undefined ? (options.body instanceof FormData ? options.body : JSON.stringify(options.body)) : undefined,
-    signal: options.signal,
-    credentials: "omit",
-  });
+  try {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers,
+      body: options.body !== undefined ? (options.body instanceof FormData ? options.body : JSON.stringify(options.body)) : undefined,
+      signal: options.signal,
+      credentials: "omit",
+    });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Request failed ${response.status}: ${text || response.statusText}`);
-  }
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new NetworkError(
+        `Request failed ${response.status}: ${text || response.statusText}`,
+        'SERVER_ERROR'
+      );
+    }
 
-  // Try to parse JSON; fall back to text
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return (await response.json()) as T;
+    // Try to parse JSON; fall back to text
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      return (await response.json()) as T;
+    }
+    return (await response.text()) as unknown as T;
+  } catch (error) {
+    // Handle different types of network errors
+    if (error instanceof NetworkError) {
+      throw error;
+    }
+    
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      // Network error - could be offline, DNS failure, or server unreachable
+      if (!navigator.onLine) {
+        throw new NetworkError(
+          'You appear to be offline. Please check your internet connection and try again.',
+          'OFFLINE'
+        );
+      } else {
+        throw new NetworkError(
+          'Unable to connect to the server. Please check your internet connection or try again later.',
+          'NETWORK_ERROR'
+        );
+      }
+    }
+    
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new NetworkError(
+        'Request was cancelled due to timeout. Please try again.',
+        'TIMEOUT'
+      );
+    }
+    
+    // Generic error fallback
+    throw new NetworkError(
+      error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.',
+      'UNKNOWN'
+    );
   }
-  return (await response.text()) as unknown as T;
 }
 
 export const apiClient = {
