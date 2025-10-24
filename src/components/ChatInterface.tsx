@@ -126,47 +126,7 @@ interface ChatInterfaceProps {
 }
 
 export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange, onNewChat }: ChatInterfaceProps) => {
-  // Array of welcome messages to randomly select from
-  // const welcomeMessages = [
-  //   "Welcome, glad to have you here. I'll help you create a marketing campaign that truly fits your brand.\nTo get started, please share your company's **About page link** or **upload a short document** describing your company.",
-  //   "Hello and welcome. I'm here to guide you step by step in building your marketing campaign.\nLet's begin with the essentials—please provide your company's **About page** or **upload a profile document** so I can understand your brand better.",
-  //   "Welcome aboard. Before we dive into your campaign, I'd like to learn a bit about your company.\nPlease share your **About page link** or **upload a brief company overview document** to help me get started.",
-  //   "It's great to have you here. Together, we'll create a campaign designed around your brand's story and goals.\nFirst, could you share your **About page** or **upload a company document** so we can begin shaping your campaign strategy?"
-  // ];
-
-  // Function to get a random welcome message
-  // const getRandomWelcomeMessage = () => {
-  //   const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
-  //   return welcomeMessages[randomIndex];
-  // };
-
-
-  // Function to save display messages to localStorage
-  // const saveDisplayMessagesToStorage = (displayMessages: Message[]) => {
-  //   try {
-  //     localStorage.setItem('campaigner-chat-display', JSON.stringify(displayMessages));
-  //   } catch (error) {
-  //     console.error('Error saving display messages to localStorage:', error);
-  //   }
-  // };
-
-  // Function to load display messages from localStorage
-  // const loadDisplayMessagesFromStorage = (): Message[] => {
-  //   try {
-  //     const savedMessages = localStorage.getItem('campaigner-chat-display');
-  //     if (savedMessages) {
-  //       const parsedMessages = JSON.parse(savedMessages);
-  //       // Convert timestamp strings back to Date objects
-  //       return parsedMessages.map((msg: any) => ({
-  //         ...msg,
-  //         timestamp: new Date(msg.timestamp)
-  //       }));
-  //     }
-  //   } catch (error) {
-  //     console.error('Error loading display messages from localStorage:', error);
-  //   }
-  //   return [];
-  // };
+ 
 
   // Function to start a new chat
   const startNewChat = () => {
@@ -188,19 +148,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [conversationHasFile, setConversationHasFile] = useState(false);
   const [attachedUrl, setAttachedUrl] = useState<string>('');
+  const [showPaperclipTooltip, setShowPaperclipTooltip] = useState(false);
 
-  // Debug state changes
-  useEffect(() => {
-    console.log('Uploaded file state changed:', uploadedFile);
-  }, [uploadedFile]);
-
-  useEffect(() => {
-    console.log('Is uploading file state changed:', isUploadingFile);
-  }, [isUploadingFile]);
-
-  useEffect(() => {
-    console.log('Conversation has file state changed:', conversationHasFile);
-  }, [conversationHasFile]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -213,22 +162,6 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     }
   }, [messages, isTyping]);
 
-  // Load chat from localStorage on component mount
-  useEffect(() => {
-    if (freshLogin) {
-      startNewChat();
-    } else {
-      // const savedMessages = loadDisplayMessagesFromStorage();
-      
-      // if (savedMessages.length > 0) {
-      //   setMessages(savedMessages);
-      //   setIsInitialTyping(false);
-      // } else {
-      //   // Show initial typing animation for new users
-      //   setIsInitialTyping(false);
-      // }
-    }
-  }, [freshLogin]);
 
   // Sync external initial conversation id into local state
   useEffect(() => {
@@ -281,7 +214,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                    content.includes('document') && content.includes('content')
                  ));
         });
-        console.log('Checking conversation for file uploads:', { hasFileContent, messageCount: mapped.length, messages: mapped.map(m => ({ type: m.type, hasFile: m.hasFile, content: m.content.substring(0, 50) })) });
+        // console.log('Checking conversation for file uploads:', { hasFileContent, messageCount: mapped.length, messages: mapped.map(m => ({ type: m.type, hasFile: m.hasFile, content: m.content.substring(0, 50) })) });
         if (typeof (data as any)?.knowledge_base_uploaded === 'boolean') {
           setConversationHasFile((data as any).knowledge_base_uploaded);
         } else {
@@ -301,22 +234,6 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setIsLoadingHistory(false);
     }
   }, [conversationId]);
-
-  // useEffect(() => {
-  //   if (messages.length > 0) {
-  //     saveDisplayMessagesToStorage(messages);
-  //   }
-  // }, [messages]);
-
-  // useEffect(() => {
-  //   try {
-  //     if (conversationId) {
-  //       localStorage.setItem('neel-taylor-conversation-id', String(conversationId));
-  //     } else {
-  //       localStorage.removeItem('neel-taylor-conversation-id');
-  //     }
-  //   } catch {}
-  // }, [conversationId]);
 
   const personas = [
     { id: 'cto', label: 'Chief Technology Officer', description: 'Tech-focused, efficiency-driven' },
@@ -341,17 +258,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         formData.append('file', uploadedFile);
       }
 
-      // Debug: log exact multipart payload
-      const debugEntries1: Record<string, unknown> = {};
-      formData.forEach((value, key) => {
-        debugEntries1[key] = value instanceof File 
-          ? { kind: 'file', name: value.name, size: value.size, type: value.type }
-          : value;
-      });
-      console.log('POST /chat payload', debugEntries1);
 
       const data = await apiClient.post<APIResponse>('/chat', formData);
-      console.log('Received API response:', data);
+      // console.log('Received API response:', data);
       
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
@@ -425,7 +334,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
-    console.log('Clearing uploaded file before sending');
+    // console.log('Clearing uploaded file before sending');
     setUploadedFile(null); // Clear file immediately when sending
     if (uploadedFile) {
       setConversationHasFile(true); // Mark conversation as having had a file
@@ -444,17 +353,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         formData.append('file', uploadedFile);
       }
 
-      // Debug: log exact multipart payload
-      const debugEntries2: Record<string, unknown> = {};
-      formData.forEach((value, key) => {
-        debugEntries2[key] = value instanceof File 
-          ? { kind: 'file', name: value.name, size: value.size, type: value.type }
-          : value;
-      });
-      console.log('POST /chat payload', debugEntries2);
 
       const data = await apiClient.post<APIResponse>('/chat', formData);
-      console.log('Received API response:', data);
+      // console.log('Received API response:', data);
       
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
@@ -742,17 +643,18 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             </div>
           )}
           <div className="relative">
-            <div className="flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20 ">
+            <div className={`flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20 ${isTyping ? 'opacity-60' : ''}`}>
               {/* Input field */}
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask AI to create a marketing campaign for your company"
+                placeholder={isTyping ? "AI is responding, please wait..." : "Ask AI to create a marketing campaign for your company"}
                 className="flex-1 border-0 bg-transparent px-2 py-0 min-h-6 max-h-16 resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-hidden"
                 style={{ 
                   height: '1.5rem',
                   lineHeight: '1.5rem'
                 }}
+                disabled={isTyping}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement;
                   target.style.height = '1.5rem';
@@ -762,40 +664,53 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    sendMessage();
+                    if (!isTyping) {
+                      sendMessage();
+                    }
                   }
                 }}
               />
               
               {/* Right side actions */}
               <div className="flex items-center space-x-2 ml-3">
-                <UploadModal 
-                  onFileSelected={(file) => { setIsUploadingFile(true); handleFileSelected(file); }}
-                  onLinkSelected={(url) => { setAttachedUrl(url); setIsUploadingFile(false); }}
-                  hasUploadedFile={!!uploadedFile || isUploadingFile || conversationHasFile}
+                <div 
+                  className="relative"
+                  onMouseEnter={() => setShowPaperclipTooltip(true)}
+                  onMouseLeave={() => setShowPaperclipTooltip(false)}
                 >
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    className="h-8 w-8 p-0 hover:bg-muted-foreground/10"
-                    title={
-                      conversationHasFile
+                  <UploadModal 
+                    onFileSelected={(file) => { setIsUploadingFile(true); handleFileSelected(file); }}
+                    onLinkSelected={(url) => { setAttachedUrl(url); setIsUploadingFile(false); }}
+                    hasUploadedFile={!!uploadedFile || isUploadingFile || conversationHasFile}
+                  >
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      className="h-8 w-8 p-0 hover:bg-muted-foreground/10"
+                      disabled={isTyping || isUploadingFile || !!uploadedFile || conversationHasFile}
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </Button>
+                  </UploadModal>
+                  {showPaperclipTooltip && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-popover text-popover-foreground text-sm rounded-md border shadow-md z-[100] whitespace-nowrap">
+                      {isTyping
+                        ? "Please wait for AI to finish responding"
+                        : conversationHasFile
                         ? "A knowledge base is already attached to this conversation"
                         : (isUploadingFile || uploadedFile)
                         ? "Uploading..."
-                        : "Upload file or link"
-                    }
-                    disabled={isUploadingFile || !!uploadedFile || conversationHasFile}
-                  >
-                    <Paperclip className="w-4 h-4" />
-                  </Button>
-                </UploadModal>
+                        : "Upload file or link"}
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-popover"></div>
+                    </div>
+                  )}
+                </div>
 
                 <Button 
                   variant="default" 
                   size="sm"
                   className="h-8 px-3 rounded-full"
-                  title="Send message"
+                  title={isTyping ? "AI is responding, please wait..." : "Send message"}
                   onClick={sendMessage}
                   disabled={!input.trim() || isTyping}
                 >

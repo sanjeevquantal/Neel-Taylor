@@ -67,32 +67,32 @@ export const campaignLoader: LoaderFunction<CampaignLoaderData> = async ({ param
 export const conversationLoader: LoaderFunction<ConversationLoaderData> = async ({ params }) => {
   const conversationId = Number(params.id);
   
-  console.log('conversationLoader called with params:', params);
-  console.log('conversationId:', conversationId);
+  // console.log('conversationLoader called with params:', params);
+  // console.log('conversationId:', conversationId);
   
   if (!conversationId || Number.isNaN(conversationId)) {
-    console.log('Invalid conversation ID, throwing 400');
+    // console.log('Invalid conversation ID, throwing 400');
     throw new Response('Conversation ID is required', { status: 400 });
   }
 
   try {
-    console.log('Attempting API call for conversation:', conversationId);
+    // console.log('Attempting API call for conversation:', conversationId);
     // Try to get conversation details from API
     const response = await apiClient.get<ConversationLoaderData>(`/conversations/${conversationId}`);
-    console.log('API response received:', response);
+    // console.log('API response received:', response);
     return response;
   } catch (error: any) {
-    console.log('API call failed, trying localStorage fallback:', error);
+    // console.log('API call failed, trying localStorage fallback:', error);
     // If API call fails, try to get from localStorage as fallback
     try {
       const savedConversations = localStorage.getItem('neel-taylor-conversation-history');
-      console.log('localStorage conversations:', savedConversations);
+      // console.log('localStorage conversations:', savedConversations);
       if (savedConversations) {
         const conversations = JSON.parse(savedConversations);
         const conversation = conversations.find((conv: any) => conv.id === conversationId);
         
         if (conversation) {
-          console.log('Found conversation in localStorage:', conversation);
+          // console.log('Found conversation in localStorage:', conversation);
           return {
             id: conversationId,
             title: conversation.title || `Conversation #${conversationId}`,
@@ -111,7 +111,7 @@ export const conversationLoader: LoaderFunction<ConversationLoaderData> = async 
       console.warn('Failed to load conversation from localStorage:', localError);
     }
 
-    console.log('No conversation found, creating mock data for testing');
+    // console.log('No conversation found, creating mock data for testing');
     // For testing purposes, return mock data instead of throwing 404
     return {
       id: conversationId,

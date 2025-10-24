@@ -46,7 +46,7 @@ export const Settings = () => {
 
   const handleSave = () => {
     // Save settings logic would go here
-    console.log("Settings saved:", settings);
+    // console.log("Settings saved:", settings);
   };
 
   return (

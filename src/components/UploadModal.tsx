@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Upload, Link, FileText, X } from "lucide-react";
+import { Upload, Link, FileText } from "lucide-react";
 // No API calls here anymore; the parent will send the file with the chat request
 
 interface UploadModalProps {
@@ -26,6 +26,7 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
   const [linkUrl, setLinkUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showTooltip, setShowTooltip] = useState(false);
 
   const validateFileType = (file: File): boolean => {
     const allowedTypes = [
@@ -135,17 +136,13 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="file-upload">Select Document</Label>
-              <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept=".pdf,.docx,.txt"
-                  onChange={handleFileSelect}
-                  disabled={hasUploadedFile}
-                  className="hidden"
-                />
-                <label htmlFor="file-upload" className={`cursor-pointer ${hasUploadedFile ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                  {hasUploadedFile ? (
+              {hasUploadedFile ? (
+                <div className="relative">
+                  <div 
+                    className="border-2 border-dashed border-border rounded-lg p-6 text-center opacity-50 cursor-not-allowed"
+                    onMouseEnter={() => setShowTooltip(true)}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
                     <div className="space-y-2">
                       <FileText className="w-8 h-8 mx-auto text-muted-foreground" />
                       <p className="font-medium text-muted-foreground">File already uploaded</p>
@@ -153,25 +150,44 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
                         Only one file per conversation allowed
                       </p>
                     </div>
-                  ) : selectedFile ? (
-                    <div className="space-y-2">
-                      <FileText className="w-8 h-8 mx-auto text-primary" />
-                      <p className="font-medium break-words text-center px-2">{selectedFile.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
-                      <p className="font-medium">Click to select file</p>
-                      <p className="text-sm text-muted-foreground">
-                        Supports PDF, DOCX, and TXT files
-                      </p>
+                  </div>
+                  {showTooltip && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-popover text-popover-foreground text-sm rounded-md border shadow-md z-[100] whitespace-nowrap">
+                      File upload is disabled - only one file per conversation allowed
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-popover"></div>
                     </div>
                   )}
-                </label>
-              </div>
+                </div>
+              ) : (
+                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    {selectedFile ? (
+                      <div className="space-y-2">
+                        <FileText className="w-8 h-8 mx-auto text-primary" />
+                        <p className="font-medium break-words text-center px-2">{selectedFile.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
+                        <p className="font-medium">Click to select file</p>
+                        <p className="text-sm text-muted-foreground">
+                          Supports PDF, DOCX, and TXT files
+                        </p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+              )}
             </div>
             
             {selectedFile && (
