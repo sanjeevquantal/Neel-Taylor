@@ -1,14 +1,100 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiClient } from "@/lib/api";
+import { useToast } from "@/components/ui/use-toast";
 
 interface LoginProps {
   onLogin: () => void;
 }
+
+// Helper function to extract user-friendly error messages
+const getErrorMessage = (error: any): string => {
+  try {
+    const message = error.message || error.toString();
+    
+    // Try to parse JSON error messages
+    if (message.includes('{"detail"')) {
+      const jsonMatch = message.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.detail && Array.isArray(parsed.detail) && parsed.detail.length > 0) {
+          // Extract the first error message
+          const firstError = parsed.detail[0];
+          
+          // Provide contextual messages based on which field is missing
+          if (firstError.loc && firstError.loc.length > 1) {
+            const field = firstError.loc[firstError.loc.length - 1];
+            if (field === 'username') {
+              return 'Please enter your email address';
+            }
+            if (field === 'password') {
+              return 'Please enter your password';
+            }
+            if (field === 'email') {
+              return 'Please enter your email address';
+            }
+          }
+          
+          if (firstError.msg) {
+            return firstError.msg.replace('Field required', 'This field is required');
+          }
+        }
+        if (typeof parsed.detail === 'string') {
+          return parsed.detail;
+        }
+      }
+    }
+    
+    // Handle common HTTP status codes
+    if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
+      return 'Invalid email or password';
+    }
+    if (message.includes('403') || message.toLowerCase().includes('forbidden')) {
+      return 'Access denied. Please contact support';
+    }
+    if (message.includes('404')) {
+      return 'Service not found. Please try again later';
+    }
+    if (message.includes('422')) {
+      return 'Please check your information and try again';
+    }
+    if (message.includes('500')) {
+      return 'Server error. Please try again later';
+    }
+    if (message.includes('503')) {
+      return 'Service temporarily unavailable. Please try again in a moment';
+    }
+    if (message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch')) {
+      return 'Connection error. Please check your internet connection';
+    }
+    
+    // If it contains specific error keywords, extract them
+    if (message.toLowerCase().includes('email')) {
+      return 'Email is already registered';
+    }
+    if (message.toLowerCase().includes('password')) {
+      return 'Password does not meet requirements';
+    }
+    if (message.toLowerCase().includes('username')) {
+      return 'Username is already taken';
+    }
+    
+    // If it's a relatively clean error message, return it
+    if (message.length < 100 && !message.includes('Request failed')) {
+      return message;
+    }
+    
+    // Default fallback
+    return 'Something went wrong. Please try again';
+  } catch {
+    return 'An unexpected error occurred. Please try again';
+  }
+};
 
 const Login = ({ onLogin }: LoginProps) => {
   const [email, setEmail] = useState("");
@@ -17,17 +103,233 @@ const Login = ({ onLogin }: LoginProps) => {
   const [signUpPassword, setSignUpPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+  
+  // Refs for focusing fields
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const signUpEmailRef = useRef<HTMLInputElement>(null);
+  const signUpPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
+  
+  // Auto-focus on the email field when the component mounts
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
 
-  const handleEmailLogin = (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Dummy implementation - just redirect to dashboard
+    
+    // Custom validation with user-friendly messages and auto-focus
+    if (!email.trim()) {
+      emailRef.current?.focus();
+      toast({
+        title: "Email required",
+        description: "Please enter your email address to continue",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!email.includes('@') || !email.includes('.')) {
+      emailRef.current?.focus();
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!password.trim()) {
+      passwordRef.current?.focus();
+      toast({
+        title: "Password required",
+        description: "Please enter your password to continue",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      // Login expects application/x-www-form-urlencoded format
+      const params = new URLSearchParams();
+      params.append('grant_type', 'password');
+      params.append('username', email);
+      params.append('password', password);
+      params.append('scope', '');
+      params.append('client_id', 'string');
+      params.append('client_secret', '');
+      
+      // Use native fetch directly for form-encoded data
+      const response = await fetch("https://neeltaylor-ifob.onrender.com/auth/login", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'accept': 'application/json',
+        },
+        body: params.toString(),
+      });
+      
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        const errorMessage = text || response.statusText || `Request failed ${response.status}`;
+        throw new Error(errorMessage);
+      }
+      
+      const data = await response.json() as { access_token?: string; token?: string };
+      const token = data.access_token || data.token;
+      
+      if (token) {
+        localStorage.setItem("auth_token", token);
+        toast({
+          title: "Welcome back! 🎉",
+          description: "You've been successfully signed in.",
+          duration: 3000,
+        });
     onLogin();
+      }
+    } catch (error: any) {
+      const friendlyMessage = getErrorMessage(error);
+      toast({
+        title: "Unable to sign in",
+        description: friendlyMessage,
+        variant: "destructive",
+        duration: 4000,
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Dummy implementation - just redirect to dashboard
-    onLogin();
+    
+    // Custom validation with user-friendly messages and auto-focus
+    if (!name.trim()) {
+      nameRef.current?.focus();
+      toast({
+        title: "Name required",
+        description: "Please enter your full name",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!signUpEmail.trim()) {
+      signUpEmailRef.current?.focus();
+      toast({
+        title: "Email required",
+        description: "Please enter your email address",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!signUpEmail.includes('@') || !signUpEmail.includes('.')) {
+      signUpEmailRef.current?.focus();
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!signUpPassword.trim()) {
+      signUpPasswordRef.current?.focus();
+      toast({
+        title: "Password required",
+        description: "Please create a password for your account",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (signUpPassword.length < 8) {
+      signUpPasswordRef.current?.focus();
+      toast({
+        title: "Password too short",
+        description: "Password must be at least 8 characters long",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!confirmPassword.trim()) {
+      confirmPasswordRef.current?.focus();
+      toast({
+        title: "Password confirmation required",
+        description: "Please confirm your password",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    // Validate passwords match
+    if (signUpPassword !== confirmPassword) {
+      confirmPasswordRef.current?.focus();
+      toast({
+        title: "Passwords don't match",
+        description: "Please make sure both password fields are the same",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await apiClient.post(
+        "https://neeltaylor-ifob.onrender.com/auth/register",
+        {
+          email: signUpEmail,
+          password: signUpPassword,
+          username: name, // Sending full name as username to backend
+          is_active: true,
+          is_superuser: false,
+          is_verified: false,
+        },
+        { absolute: true }
+      );
+      
+      toast({
+        title: "Account created! 🎊",
+        description: "Your account has been successfully created. Please sign in to continue.",
+        duration: 4000,
+      });
+      
+      // Clear form
+      setSignUpEmail("");
+      setSignUpPassword("");
+      setConfirmPassword("");
+      setName("");
+      
+      // Optionally redirect to sign in tab
+      // You can add tab switching logic here if needed
+    } catch (error: any) {
+      const friendlyMessage = getErrorMessage(error);
+      toast({
+        title: "Registration failed",
+        description: friendlyMessage,
+        variant: "destructive",
+        duration: 4000,
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleLogin = () => {
@@ -70,12 +372,18 @@ const Login = ({ onLogin }: LoginProps) => {
                         Email Address
                       </Label>
                       <Input
+                        ref={emailRef}
                         id="signin-email"
                         type="email"
                         placeholder="Enter your email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        required
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            passwordRef.current?.focus();
+                          }
+                        }}
                         className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
                       />
                     </div>
@@ -84,20 +392,27 @@ const Login = ({ onLogin }: LoginProps) => {
                         Password
                       </Label>
                       <Input
+                        ref={passwordRef}
                         id="signin-password"
                         type="password"
                         placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        required
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEmailLogin(e as any);
+                          }
+                        }}
                         className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
                       />
                     </div>
                     <Button 
                       type="submit" 
+                      disabled={isLoading}
                       className="w-full h-11 bg-gradient-primary hover:opacity-90 transition-smooth font-medium text-base shadow-soft hover:shadow-medium mt-6"
                     >
-                      Sign In
+                      {isLoading ? "Signing in..." : "Sign In"}
                     </Button>
                   </form>
 
@@ -149,12 +464,18 @@ const Login = ({ onLogin }: LoginProps) => {
                         Full Name
                       </Label>
                       <Input
+                        ref={nameRef}
                         id="signup-name"
                         type="text"
                         placeholder="Enter your full name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        required
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            signUpEmailRef.current?.focus();
+                          }
+                        }}
                         className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
                       />
                     </div>
@@ -163,12 +484,18 @@ const Login = ({ onLogin }: LoginProps) => {
                         Email Address
                       </Label>
                       <Input
+                        ref={signUpEmailRef}
                         id="signup-email"
                         type="email"
                         placeholder="Enter your email"
                         value={signUpEmail}
                         onChange={(e) => setSignUpEmail(e.target.value)}
-                        required
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            signUpPasswordRef.current?.focus();
+                          }
+                        }}
                         className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
                       />
                     </div>
@@ -177,12 +504,18 @@ const Login = ({ onLogin }: LoginProps) => {
                         Password
                       </Label>
                       <Input
+                        ref={signUpPasswordRef}
                         id="signup-password"
                         type="password"
-                        placeholder="Create a password"
+                        placeholder="Create a password (min. 8 characters)"
                         value={signUpPassword}
                         onChange={(e) => setSignUpPassword(e.target.value)}
-                        required
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            confirmPasswordRef.current?.focus();
+                          }
+                        }}
                         className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
                       />
                     </div>
@@ -191,20 +524,27 @@ const Login = ({ onLogin }: LoginProps) => {
                         Confirm Password
                       </Label>
                       <Input
+                        ref={confirmPasswordRef}
                         id="confirm-password"
                         type="password"
-                        placeholder="Confirm your password"
+                        placeholder="Re-enter your password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        required
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSignUp(e as any);
+                          }
+                        }}
                         className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
                       />
                     </div>
                     <Button 
                       type="submit" 
+                      disabled={isLoading}
                       className="w-full h-11 bg-gradient-primary hover:opacity-90 transition-smooth font-medium text-base shadow-soft hover:shadow-medium mt-6"
                     >
-                      Create Account
+                      {isLoading ? "Creating account..." : "Create Account"}
                     </Button>
                   </form>
 

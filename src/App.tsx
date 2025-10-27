@@ -55,6 +55,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem('campaigner-chat');
       localStorage.removeItem('neel-taylor-conversation-history');
       localStorage.removeItem('campaigner-chat-display');
+      // Also remove auth token
+      localStorage.removeItem('auth_token');
     } catch (error) {
       console.error('Error clearing authentication data:', error);
     }
