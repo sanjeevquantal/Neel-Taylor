@@ -64,9 +64,18 @@ export interface RequestOptions {
 
 // Custom error types for better error handling
 export class NetworkError extends Error {
-  constructor(message: string, public type: 'NETWORK_ERROR' | 'TIMEOUT' | 'OFFLINE' | 'SERVER_ERROR' | 'UNKNOWN') {
+  // httpStatus is optional and only set for server responses
+  public httpStatus?: number;
+  public rawBody?: string;
+  constructor(
+    message: string,
+    public type: 'NETWORK_ERROR' | 'TIMEOUT' | 'OFFLINE' | 'SERVER_ERROR' | 'UNKNOWN',
+    options?: { httpStatus?: number; rawBody?: string }
+  ) {
     super(message);
     this.name = 'NetworkError';
+    this.httpStatus = options?.httpStatus;
+    this.rawBody = options?.rawBody;
   }
 }
 
@@ -109,9 +118,24 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
         window.dispatchEvent(new CustomEvent('auth-expired'));
       }
       
+      // Try to surface a concise message for common errors
+      let conciseMessage = response.statusText || `HTTP ${response.status}`;
+      try {
+        if (text && text.trim().startsWith('{')) {
+          const json = JSON.parse(text);
+          // Prefer typical API fields when present
+          conciseMessage = json.message || json.detail || conciseMessage;
+        } else if (text) {
+          conciseMessage = text;
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+
       throw new NetworkError(
-        `Request failed ${response.status}: ${text || response.statusText}`,
-        'SERVER_ERROR'
+        `Request failed ${response.status}: ${conciseMessage}`,
+        'SERVER_ERROR',
+        { httpStatus: response.status, rawBody: text }
       );
     }
 

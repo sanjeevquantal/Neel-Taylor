@@ -8,12 +8,25 @@ export const ErrorBoundary = () => {
 
   let errorMessage = "An unexpected error occurred";
   let errorStatus = 500;
+  let friendlyMessage: string | null = null;
 
   if (isRouteErrorResponse(error)) {
-    errorMessage = error.data || error.statusText || `Error ${error.status}`;
+    // Prefer clean string data; avoid dumping raw JSON structures
+    const data = typeof error.data === 'string' ? error.data : '';
+    errorMessage = data || error.statusText || `Error ${error.status}`;
     errorStatus = error.status;
   } else if (error instanceof Error) {
     errorMessage = error.message;
+  }
+
+  // Map common statuses to user friendly messages
+  if (errorStatus === 404) {
+    // If backend provided specific resource not found text, use it; otherwise generic
+    friendlyMessage = errorMessage && /not found/i.test(errorMessage)
+      ? errorMessage
+      : 'We couldn\'t find what you\'re looking for.';
+  } else if (errorStatus === 401) {
+    friendlyMessage = 'Your session expired. Please sign in again.';
   }
 
   return (
@@ -26,10 +39,10 @@ export const ErrorBoundary = () => {
           
           <div>
             <h1 className="text-2xl font-bold text-foreground mb-2">
-              {errorStatus === 404 ? "Not Found" : "Error"}
+              {errorStatus === 404 ? "Not found" : "Error"}
             </h1>
             <p className="text-muted-foreground mb-4">
-              {errorMessage}
+              {friendlyMessage || errorMessage}
             </p>
           </div>
 

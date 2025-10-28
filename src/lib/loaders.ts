@@ -1,5 +1,5 @@
-import { LoaderFunctionArgs, LoaderFunction } from 'react-router-dom';
-import apiClient from './api';
+import { LoaderFunctionArgs, LoaderFunction, redirect } from 'react-router-dom';
+import apiClient, { NetworkError } from './api';
 
 // Types for loader data
 export type CampaignLoaderData = {
@@ -52,14 +52,18 @@ export const campaignLoader: LoaderFunction<CampaignLoaderData> = async ({ param
     const response = await apiClient.get<CampaignLoaderData>(`/campaigns/${campaignId}`);
     return response;
   } catch (error: any) {
-    // If it's a 404, throw a Response object for React Router to handle
-    if (error?.status === 404) {
+    // If unauthorized, redirect to login/home which renders Login when not authenticated
+    if (error instanceof NetworkError && error.httpStatus === 401) {
+      throw redirect('/');
+    }
+    // Normalize 404 errors to a clean message
+    if (error instanceof NetworkError && error.httpStatus === 404) {
       throw new Response('Campaign not found', { status: 404 });
     }
-    // For other errors, re-throw as Response
-    throw new Response(error?.message || 'Failed to load campaign', { 
-      status: error?.status || 500 
-    });
+    // For other errors, re-throw as Response with concise message
+    const message = error instanceof Error ? error.message : 'Failed to load campaign';
+    const status = (error instanceof NetworkError && error.httpStatus) || error?.status || 500;
+    throw new Response(message, { status });
   }
 }
 
@@ -79,11 +83,14 @@ export const conversationLoader: LoaderFunction<ConversationLoaderData> = async 
     const response = await apiClient.get<ConversationLoaderData>(`/conversations/${conversationId}`);
     return response;
   } catch (error: any) {
-    if (error?.status === 404) {
+    if (error instanceof NetworkError && error.httpStatus === 401) {
+      throw redirect('/');
+    }
+    if (error instanceof NetworkError && error.httpStatus === 404) {
       throw new Response('Conversation not found', { status: 404 });
     }
-    throw new Response(error?.message || 'Failed to load conversation', {
-      status: error?.status || 500
-    });
+    const message = error instanceof Error ? error.message : 'Failed to load conversation';
+    const status = (error instanceof NetworkError && error.httpStatus) || error?.status || 500;
+    throw new Response(message, { status });
   }
 }
