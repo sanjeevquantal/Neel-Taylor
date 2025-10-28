@@ -22,6 +22,37 @@ const getAuthToken = (): string | undefined => {
   }
 };
 
+// Check if JWT token is expired
+export const isTokenExpired = (token: string): boolean => {
+  try {
+    // JWT tokens have 3 parts separated by dots
+    const parts = token.split('.');
+    if (parts.length !== 3) return true;
+    
+    // Decode the payload (second part)
+    const payload = JSON.parse(atob(parts[1]));
+    
+    // Check if token has expiration claim
+    if (!payload.exp) return true;
+    
+    // Check if token is expired (exp is in seconds, Date.now() is in milliseconds)
+    const currentTime = Math.floor(Date.now() / 1000);
+    return payload.exp < currentTime;
+  } catch {
+    // If we can't parse the token, consider it expired
+    return true;
+  }
+};
+
+// Get valid auth token (returns undefined if expired)
+export const getValidAuthToken = (): string | undefined => {
+  const token = getAuthToken();
+  if (!token || isTokenExpired(token)) {
+    return undefined;
+  }
+  return token;
+};
+
 export interface RequestOptions {
   method?: HttpMethod;
   headers?: Record<string, string>;
@@ -52,7 +83,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     headers["Content-Type"] = "application/json";
   }
 
-  const token = getAuthToken();
+  const token = getValidAuthToken();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -68,6 +99,16 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
+      
+      // Handle 401 Unauthorized - token expired or invalid
+      if (response.status === 401) {
+        // Clear expired token
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('campaigner-auth');
+        // Dispatch custom event to notify app of logout
+        window.dispatchEvent(new CustomEvent('auth-expired'));
+      }
+      
       throw new NetworkError(
         `Request failed ${response.status}: ${text || response.statusText}`,
         'SERVER_ERROR'

@@ -11,6 +11,7 @@ import NotFound from "./pages/NotFound";
 import { PageLoadingSpinner } from "@/components/LoadingSpinner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { campaignLoader, conversationLoader } from "./lib/loaders";
+import { isTokenExpired } from "./lib/api";
 
 const queryClient = new QueryClient();
 
@@ -27,13 +28,39 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Check localStorage for existing authentication on app load
     try {
       const savedAuth = localStorage.getItem('campaigner-auth');
-      return savedAuth === 'true';
+      const authToken = localStorage.getItem('auth_token');
+      
+      // If no auth flag or no token, not authenticated
+      if (savedAuth !== 'true' || !authToken) {
+        return false;
+      }
+      
+      // Check if token is expired
+      if (isTokenExpired(authToken)) {
+        // Clear expired authentication data
+        localStorage.removeItem('campaigner-auth');
+        localStorage.removeItem('auth_token');
+        return false;
+      }
+      
+      return true;
     } catch (error) {
       console.error('Error loading authentication state:', error);
       return false;
     }
   });
   const [isFreshLogin, setIsFreshLogin] = useState(false);
+
+  // Listen for auth expiration events from API calls
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setIsAuthenticated(false);
+      setIsFreshLogin(false);
+    };
+
+    window.addEventListener('auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('auth-expired', handleAuthExpired);
+  }, []);
 
   const handleLogin = () => {
     // Clear any existing chat data when user logs in

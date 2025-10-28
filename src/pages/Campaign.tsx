@@ -129,7 +129,7 @@ const CampaignPage = () => {
                       <Card key={step.sequence_step_id || index} className="p-4 bg-muted/30">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center space-x-2">
-                            <Badge variant="secondary">Step {step.step_number !== undefined ? step.step_number + 1 : index + 1}</Badge>
+                            <Badge variant="secondary">Step {step.step_number !== undefined ? step.step_number : index + 1}</Badge>
                             <span className="text-xs text-muted-foreground">
                               {step.created_at ? new Date(step.created_at).toLocaleDateString() : ''}
                             </span>
