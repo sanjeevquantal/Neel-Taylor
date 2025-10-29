@@ -51,7 +51,7 @@ export const CampaignBuilder = ({ selectedCampaignId }: CampaignBuilderProps) =>
       setLoadingSelected(true);
       setSelectedError(null);
       try {
-        const data = await apiClient.get<any>(`/campaigns/${selectedCampaignId}`);
+        const data = await apiClient.get<any>(`/api/campaigns/${selectedCampaignId}`);
         // Attempt to map common fields
         setCampaignData(prev => ({
           ...prev,

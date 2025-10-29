@@ -49,7 +49,7 @@ export const campaignLoader: LoaderFunction<CampaignLoaderData> = async ({ param
   }
 
   try {
-    const response = await apiClient.get<CampaignLoaderData>(`/campaigns/${campaignId}`);
+    const response = await apiClient.get<CampaignLoaderData>(`/api/campaigns/${campaignId}`);
     return response;
   } catch (error: any) {
     // If unauthorized, redirect to login/home which renders Login when not authenticated
@@ -80,7 +80,7 @@ export const conversationLoader: LoaderFunction<ConversationLoaderData> = async 
   }
 
   try {
-    const response = await apiClient.get<ConversationLoaderData>(`/conversations/${conversationId}`);
+    const response = await apiClient.get<ConversationLoaderData>(`/api/conversations/${conversationId}`);
     return response;
   } catch (error: any) {
     if (error instanceof NetworkError && error.httpStatus === 401) {

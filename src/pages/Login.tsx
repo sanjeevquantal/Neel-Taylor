@@ -167,23 +167,17 @@ const Login = ({ onLogin }: LoginProps) => {
       params.append('client_id', 'string');
       params.append('client_secret', '');
       
-      // Use native fetch directly for form-encoded data
-      const response = await fetch("https://neeltaylor-ifob.onrender.com/auth/login", {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'accept': 'application/json',
-        },
-        body: params.toString(),
-      });
-      
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        const errorMessage = text || response.statusText || `Request failed ${response.status}`;
-        throw new Error(errorMessage);
-      }
-      
-      const data = await response.json() as { access_token?: string; token?: string };
+      // Use shared API client with new base (no /api) and relative auth path
+      const data = await apiClient.post<{ access_token?: string; token?: string }>(
+        '/auth/login',
+        params.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'accept': 'application/json',
+          },
+        }
+      );
       const token = data.access_token || data.token;
       
       if (token) {
@@ -293,7 +287,7 @@ const Login = ({ onLogin }: LoginProps) => {
     setIsLoading(true);
     try {
       await apiClient.post(
-        "https://neeltaylor-ifob.onrender.com/auth/register",
+        '/auth/register',
         {
           email: signUpEmail,
           password: signUpPassword,
@@ -301,8 +295,7 @@ const Login = ({ onLogin }: LoginProps) => {
           is_active: true,
           is_superuser: false,
           is_verified: false,
-        },
-        { absolute: true }
+        }
       );
       
       toast({

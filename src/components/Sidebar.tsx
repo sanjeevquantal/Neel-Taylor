@@ -78,7 +78,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
         else localStorage.setItem('campaigner-user-id', String(userId));
       } catch {}
 
-      const data = await apiClient.get<any>(`/conversations/?load_messages=false`);
+      const data = await apiClient.get<any>(`/api/conversations/?load_messages=false`);
       // Normalize possible shapes: array of objects, array of strings, or object with "items"
       let items: ConversationItem[] = [];
       if (Array.isArray(data)) {
@@ -157,7 +157,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
           else localStorage.setItem('campaigner-user-id', String(userId));
         } catch {}
 
-        const data = await apiClient.get<any>(`/campaigns/?load_leads=false&load_email_sequence=false`);
+        const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
         let items: Array<{ id: number; name: string }> = [];
         if (Array.isArray(data)) {
           items = data.map((it: any, idx: number) => ({

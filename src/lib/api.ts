@@ -5,7 +5,7 @@ export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 const getBaseUrl = (): string => {
   const envUrl = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   // Fallback to Render backend if not configured
-  return envUrl || "https://neeltaylor-ifob.onrender.com/api";
+  return envUrl || "https://neeltaylor-ifob.onrender.com";
 };
 
 const getAuthToken = (): string | undefined => {
@@ -87,8 +87,8 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     ...(options.headers || {}),
   };
 
-  // Only set Content-Type for JSON requests
-  if (options.body && !(options.body instanceof FormData)) {
+  // Only set Content-Type for JSON requests if caller didn't set it
+  if (options.body && !(options.body instanceof FormData) && !("Content-Type" in headers)) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -101,7 +101,13 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     const response = await fetch(url, {
       method: options.method || "GET",
       headers,
-      body: options.body !== undefined ? (options.body instanceof FormData ? options.body : JSON.stringify(options.body)) : undefined,
+      body: options.body !== undefined
+        ? (
+            options.body instanceof FormData
+              ? options.body
+              : (typeof options.body === 'string' ? options.body : JSON.stringify(options.body))
+          )
+        : undefined,
       signal: options.signal,
       credentials: "omit",
     });

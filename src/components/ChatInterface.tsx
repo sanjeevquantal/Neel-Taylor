@@ -177,7 +177,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       // Clear existing messages immediately so previous conversation disappears
       setMessages([]);
       try {
-        const data = await apiClient.get<any>(`/conversations/${id}`);
+        const data = await apiClient.get<any>(`/api/conversations/${id}`);
         // Normalize possible shapes to Message[]
         // Expect either { messages: [...] } or [...]
         const rawMessages: any[] = Array.isArray(data) ? data : (Array.isArray(data?.messages) ? data.messages : []);
@@ -259,7 +259,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       }
 
 
-      const data = await apiClient.post<APIResponse>('/chat', formData);
+      const data = await apiClient.post<APIResponse>('/api/chat', formData);
       // console.log('Received API response:', data);
       
       const aiResponse: Message = {
@@ -354,7 +354,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       }
 
 
-      const data = await apiClient.post<APIResponse>('/chat', formData);
+      const data = await apiClient.post<APIResponse>('/api/chat', formData);
       // console.log('Received API response:', data);
       
       const aiResponse: Message = {

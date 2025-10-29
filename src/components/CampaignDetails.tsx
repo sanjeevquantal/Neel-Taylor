@@ -30,7 +30,7 @@ export const CampaignDetails = ({ campaignId, onClose }: CampaignDetailsProps) =
       setLoading(true);
       setError(null);
       try {
-        const resp = await apiClient.get<CampaignResponse>(`/campaigns/${campaignId}`);
+        const resp = await apiClient.get<CampaignResponse>(`/api/campaigns/${campaignId}`);
         setData(resp);
       } catch (err: any) {
         setError(err?.message || "Failed to load campaign");
