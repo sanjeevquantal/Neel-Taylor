@@ -5,7 +5,7 @@ export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 const getBaseUrl = (): string => {
   const envUrl = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   // Fallback to Render backend if not configured
-  return envUrl || "https://neeltaylor-ifob.onrender.com";
+  return envUrl || "https://nealtaylorbackend.onrender.com";
 };
 
 const getAuthToken = (): string | undefined => {
