@@ -104,6 +104,7 @@ const Login = ({ onLogin }: LoginProps) => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [tab, setTab] = useState<'signin' | 'signup'>("signin");
   const { toast } = useToast();
   
   // Refs for focusing fields
@@ -310,8 +311,11 @@ const Login = ({ onLogin }: LoginProps) => {
       setConfirmPassword("");
       setName("");
       
-      // Optionally redirect to sign in tab
-      // You can add tab switching logic here if needed
+      // Redirect to sign in tab and focus email
+      setTab('signin');
+      setTimeout(() => {
+        emailRef.current?.focus();
+      }, 0);
     } catch (error: any) {
       const friendlyMessage = getErrorMessage(error);
       toast({
@@ -341,7 +345,7 @@ const Login = ({ onLogin }: LoginProps) => {
 
         <Card className="bg-gradient-card shadow-medium border-border/20 backdrop-blur-sm">
           <CardHeader className="pb-4">
-            <Tabs defaultValue="signin" className="w-full">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as 'signin' | 'signup')} className="w-full">
               <TabsList className="grid w-full grid-cols-2 bg-muted/30">
                 <TabsTrigger 
                   value="signin" 
