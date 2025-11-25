@@ -5,8 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { ChatInterface } from "@/components/ChatInterface";
 import { CampaignBuilder } from "@/components/CampaignBuilder";
 import { Settings } from "@/components/Settings";
-import { useNavigate, useParams, useLocation, useLoaderData } from "react-router-dom";
-import { ConversationLoaderData } from "@/lib/loaders";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 interface IndexProps {
   onLogout: () => void;
@@ -17,9 +16,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const sidebarRef = useRef<SidebarRef>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  
-  // Get loader data if available (for conversation routes)
-  const loaderData = useLoaderData() as ConversationLoaderData | undefined;
+  const params = useParams();
   
   // Determine active tab from URL
   const getActiveTabFromPath = (pathname: string) => {
@@ -44,13 +41,9 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }
   });
   const [activeConversationId, setActiveConversationId] = useState<number | null>(() => {
-    // Use loader data if available, otherwise start fresh
-    if (loaderData?.id) {
-      return loaderData.id;
-    }
-    return null;
+    const urlId = params?.id ? Number(params.id) : null;
+    return Number.isFinite(urlId) ? urlId : null;
   });
-  const params = useParams();
 
   // Update active tab when URL changes
   useEffect(() => {
@@ -81,30 +74,33 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   // Sync URL param conversation id into local state
   useEffect(() => {
     const urlId = params.id ? Number(params.id) : null;
-    // Use loader data if available, otherwise use URL param
-    const conversationId = loaderData?.id || urlId;
-    
-    if (conversationId !== activeConversationId) {
-      setActiveConversationId(conversationId);
-      if (conversationId) {
-      }
+    if (urlId !== activeConversationId) {
+      setActiveConversationId(urlId);
     }
-  }, [params.id, activeConversationId, loaderData?.id]);
+  }, [params.id, activeConversationId]);
 
   const renderContent = () => {
     switch (activeTab) {
       case 'chat':
-        return <ChatInterface key={activeConversationId ?? 'new'} freshLogin={freshLogin} isSidebarCollapsed={isSidebarCollapsed} initialConversationId={activeConversationId} onConversationIdChange={(id) => {
-          setActiveConversationId(id);
-          // Refresh sidebar conversations when a new conversation is created
-          if (id) {
-            sidebarRef.current?.refreshConversations({ silent: true });
-            navigate(`/conversations/${id}`);
-          }
-        }} onNewChat={() => {
-          setActiveConversationId(null);
-          navigate('/');
-        }} />;
+        return (
+          <ChatInterface 
+            freshLogin={freshLogin} 
+            isSidebarCollapsed={isSidebarCollapsed} 
+            initialConversationId={activeConversationId} 
+            onConversationIdChange={(id) => {
+              setActiveConversationId(id);
+              // Refresh sidebar conversations when a new conversation is created
+              if (id) {
+                sidebarRef.current?.refreshConversations({ silent: true });
+                navigate(`/conversations/${id}`, { replace: true });
+              }
+            }} 
+            onNewChat={() => {
+              setActiveConversationId(null);
+              navigate('/', { replace: true });
+            }} 
+          />
+        );
       case 'campaigns':
         return <CampaignBuilder />;
       case 'analytics':

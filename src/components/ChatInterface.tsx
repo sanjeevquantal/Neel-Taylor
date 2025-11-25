@@ -12,7 +12,7 @@ import {
   Paperclip,
   X
 } from "lucide-react";
-import apiClient, { NetworkError } from "@/lib/api";
+import apiClient, { NetworkError, streamChat } from "@/lib/api";
 import { UploadModal } from "@/components/UploadModal";
 
 // Simple but structured markdown parser for chat messages
@@ -117,6 +117,10 @@ interface Message {
   hasFile?: boolean;
 }
 
+interface PersistedMessage extends Omit<Message, 'timestamp'> {
+  timestamp: string;
+}
+
 interface ChatInterfaceProps {
   freshLogin?: boolean;
   isSidebarCollapsed?: boolean;
@@ -124,6 +128,62 @@ interface ChatInterfaceProps {
   onConversationIdChange?: (id: number | null) => void;
   onNewChat?: () => void;
 }
+
+const CHAT_STORAGE_KEY = 'campaigner-chat-cache';
+const DRAFT_STORAGE_KEY = 'draft';
+
+const getConversationStorageKey = (id: number | null) =>
+  id ? `conversation-${id}` : DRAFT_STORAGE_KEY;
+
+const readChatStorage = (): Record<string, PersistedMessage[]> => {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('Failed to read chat storage', err);
+    return {};
+  }
+};
+
+const writeChatStorage = (store: Record<string, PersistedMessage[]>) => {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(store));
+  } catch (err) {
+    console.error('Failed to write chat storage', err);
+  }
+};
+
+const loadMessagesFromStorage = (conversationId: number | null): Message[] => {
+  const store = readChatStorage();
+  const key = getConversationStorageKey(conversationId);
+  const persisted = store[key];
+  if (!persisted || !Array.isArray(persisted)) return [];
+  return persisted.map((msg) => ({
+    ...msg,
+    timestamp: new Date(msg.timestamp),
+  }));
+};
+
+const persistMessagesToStorage = (conversationId: number | null, messages: Message[]) => {
+  const store = readChatStorage();
+  const key = getConversationStorageKey(conversationId);
+  store[key] = messages.map((msg) => ({
+    ...msg,
+    timestamp: msg.timestamp.toISOString(),
+  }));
+  writeChatStorage(store);
+};
+
+const migrateDraftToConversationStorage = (newConversationId: number) => {
+  const store = readChatStorage();
+  const draftMessages = store[DRAFT_STORAGE_KEY];
+  if (draftMessages && draftMessages.length) {
+    store[getConversationStorageKey(newConversationId)] = draftMessages;
+    delete store[DRAFT_STORAGE_KEY];
+    writeChatStorage(store);
+  }
+};
 
 export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange, onNewChat }: ChatInterfaceProps) => {
  
@@ -134,10 +194,11 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     setConversationId(null);
     setIsInitialTyping(false);
     setConversationHasFile(false); // Reset file upload flag for new chat
+    persistMessagesToStorage(null, []);
     onNewChat?.();
   };
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => loadMessagesFromStorage(initialConversationId ?? null));
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -152,6 +213,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const skipNextHistoryLoadRef = useRef(false);
 
   // Scroll to bottom on new messages or typing changes
   useEffect(() => {
@@ -162,6 +224,11 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     }
   }, [messages, isTyping]);
 
+
+  // Persist messages whenever they change
+  useEffect(() => {
+    persistMessagesToStorage(conversationId ?? null, messages);
+  }, [conversationId, messages]);
 
   // Sync external initial conversation id into local state
   useEffect(() => {
@@ -174,8 +241,6 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setIsLoadingHistory(true);
       setIsInitialTyping(false);
       setIsTyping(false);
-      // Clear existing messages immediately so previous conversation disappears
-      setMessages([]);
       try {
         const data = await apiClient.get<any>(`/api/conversations/${id}`);
         // Normalize possible shapes to Message[]
@@ -227,12 +292,25 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       }
     };
 
-    if (conversationId) {
-      void loadHistory(conversationId);
+    if (!conversationId) {
+      setMessages(loadMessagesFromStorage(null));
+      setIsLoadingHistory(false);
+      return;
+    }
+
+    if (skipNextHistoryLoadRef.current) {
+      skipNextHistoryLoadRef.current = false;
+      return;
+    }
+
+    const cachedMessages = loadMessagesFromStorage(conversationId);
+    if (cachedMessages.length) {
+      setMessages(cachedMessages);
     } else {
       setMessages([]);
-      setIsLoadingHistory(false);
     }
+
+    void loadHistory(conversationId);
   }, [conversationId]);
 
   const personas = [
@@ -242,9 +320,36 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     { id: 'enterprise', label: 'Enterprise Executive', description: 'ROI-focused, strategic' }
   ];
 
+  const syncConversationContext = async (candidateId?: number) => {
+    let resolvedId = candidateId;
+
+    if (!resolvedId) {
+      try {
+        const conversations = await apiClient.get<any[]>('/api/conversations');
+        if (conversations && conversations.length > 0) {
+          resolvedId = conversations[0]?.id;
+        }
+      } catch (err) {
+        console.error('Failed to fetch conversation ID after streaming:', err);
+      }
+    }
+
+    if (resolvedId) {
+      migrateDraftToConversationStorage(resolvedId);
+      skipNextHistoryLoadRef.current = true;
+      setConversationId(resolvedId);
+      onConversationIdChange?.(resolvedId);
+    }
+  };
+
 
   const sendMessageWithContent = async (content: string) => {
     setIsTyping(true);
+
+    // Create assistant message ID but don't add it to messages yet
+    const assistantMessageId = (Date.now() + 1).toString();
+    let hasReceivedFirstChunk = false;
+    let streamedConversationId: number | undefined;
 
     try {
       const formData = new FormData();
@@ -258,33 +363,107 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         formData.append('file', uploadedFile);
       }
 
+      // Track if this was a new conversation
+      const wasNewConversation = !conversationId;
 
-      const data = await apiClient.post<APIResponse>('/api/chat', formData);
-      // console.log('Received API response:', data);
-      
+      // Use streaming API
+      const streamResult = await streamChat('/api/chat', formData, {
+        onChunk: (chunk: string) => {
+          // On first chunk, add the message and hide typing indicator
+          if (!hasReceivedFirstChunk) {
+            hasReceivedFirstChunk = true;
+            setIsTyping(false);
+            
+            // Add the assistant message with the first chunk
+            const aiResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: chunk,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Update the assistant message content as subsequent chunks arrive
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            ));
+          }
+        },
+        onComplete: async (fullContent: string) => {
+          // If no chunks were received, create the message now with full content
+          if (!hasReceivedFirstChunk) {
+            setIsTyping(false);
       const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
+              id: assistantMessageId,
         type: 'assistant',
-        content: data.msg || 'I received your information but couldn\'t process it properly. Please try again.',
+              content: fullContent || 'No response generated.',
         timestamp: new Date()
       };
-      
       setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Final update with complete content
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: fullContent }
+                : msg
+            ));
+          }
 
-      // Persist conversation id from response if present
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
-        onConversationIdChange?.(data.conversation_id);
-      }
-      if (typeof data.knowledge_base_uploaded === 'boolean') {
-        setConversationHasFile(data.knowledge_base_uploaded);
-        if (data.knowledge_base_uploaded) {
-          setAttachedUrl('');
-          setIsUploadingFile(false);
+        },
+        onError: (error: Error) => {
+          console.error('Streaming error:', error);
+          setIsTyping(false);
+          
+          let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
+          
+          if (error instanceof NetworkError) {
+            switch (error.type) {
+              case 'OFFLINE':
+                errorMessage = '🌐 **You appear to be offline.**\n\nPlease check your internet connection and try again.';
+                break;
+              case 'NETWORK_ERROR':
+                errorMessage = '🔌 **Unable to connect to the server.**\n\nThis could be due to:\n• Internet connection issues\n• Server maintenance\n• Network firewall restrictions\n\nPlease check your connection and try again.';
+                break;
+              case 'TIMEOUT':
+                errorMessage = '⏱️ **Request timed out.**\n\nThe server is taking too long to respond. Please try again.';
+                break;
+              case 'SERVER_ERROR':
+                errorMessage = '🚫 **Server error occurred.**\n\nThe server encountered an issue. Please try again in a few moments.';
+                break;
+              default:
+                errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
+            }
+          }
+          
+          // Add or update the message with error content
+          if (!hasReceivedFirstChunk) {
+            const errorResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: errorMessage,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorResponse]);
+          } else {
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: errorMessage }
+                : msg
+            ));
         }
       }
+      });
+
+      streamedConversationId = streamResult?.conversationId;
+
+      if (wasNewConversation) {
+        await syncConversationContext(streamedConversationId);
+      }
     } catch (error) {
-      console.error('Error calling API:', error);
+      console.error('Error calling streaming API:', error);
+      setIsTyping(false);
       
       let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
       
@@ -307,14 +486,22 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         }
       }
       
+      // Add or update the message with error content
+      if (!hasReceivedFirstChunk) {
       const errorResponse: Message = {
-        id: (Date.now() + 1).toString(),
+          id: assistantMessageId,
         type: 'assistant',
         content: errorMessage,
         timestamp: new Date()
       };
-      
       setMessages(prev => [...prev, errorResponse]);
+      } else {
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMessageId 
+            ? { ...msg, content: errorMessage }
+            : msg
+        ));
+      }
     } finally {
       setIsTyping(false);
     }
@@ -332,6 +519,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       hasFile: !!uploadedFile
     };
 
+    const userInput = input;
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     // console.log('Clearing uploaded file before sending');
@@ -341,9 +529,14 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     }
     setIsTyping(true);
 
+    // Create assistant message ID but don't add it to messages yet
+    const assistantMessageId = (Date.now() + 1).toString();
+    let hasReceivedFirstChunk = false;
+    let streamedConversationId: number | undefined;
+
     try {
       const formData = new FormData();
-      formData.append('query', input);
+      formData.append('query', userInput);
       formData.append('conversation_id', String(conversationId || 0));
       if (attachedUrl) {
         formData.append('URL', attachedUrl);
@@ -353,33 +546,117 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         formData.append('file', uploadedFile);
       }
 
+      // Track if this was a new conversation
+      const wasNewConversation = !conversationId;
 
-      const data = await apiClient.post<APIResponse>('/api/chat', formData);
-      // console.log('Received API response:', data);
-      
+      // Use streaming API
+      const streamResult = await streamChat('/api/chat', formData, {
+        onChunk: (chunk: string) => {
+          // On first chunk, add the message and hide typing indicator
+          if (!hasReceivedFirstChunk) {
+            hasReceivedFirstChunk = true;
+            setIsTyping(false);
+            
+            // Add the assistant message with the first chunk
+            const aiResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: chunk,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Update the assistant message content as subsequent chunks arrive
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            ));
+          }
+        },
+        onComplete: async (fullContent: string) => {
+          // If no chunks were received, create the message now with full content
+          if (!hasReceivedFirstChunk) {
+            setIsTyping(false);
       const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
+              id: assistantMessageId,
         type: 'assistant',
-        content: data.msg || 'I received your message but couldn\'t process it properly. Please try again.',
+              content: fullContent || 'No response generated.',
         timestamp: new Date()
       };
-      
       setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Final update with complete content
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: fullContent }
+                : msg
+            ));
+          }
 
-      // Persist conversation id from response if present
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
-        onConversationIdChange?.(data.conversation_id);
-      }
-      if (typeof data.knowledge_base_uploaded === 'boolean') {
-        setConversationHasFile(data.knowledge_base_uploaded);
-        if (data.knowledge_base_uploaded) {
+          if (attachedUrl) {
           setAttachedUrl('');
           setIsUploadingFile(false);
+            setConversationHasFile(true);
+          }
+        },
+        onError: (error: Error) => {
+          console.error('Streaming error:', error);
+          setIsTyping(false);
+          
+          let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
+          
+          if (error instanceof NetworkError) {
+            switch (error.type) {
+              case 'OFFLINE':
+                errorMessage = '🌐 **You appear to be offline.**\n\nPlease check your internet connection and try again.';
+                break;
+              case 'NETWORK_ERROR':
+                errorMessage = '🔌 **Unable to connect to the server.**\n\nThis could be due to:\n• Internet connection issues\n• Server maintenance\n• Network firewall restrictions\n\nPlease check your connection and try again.';
+                break;
+              case 'TIMEOUT':
+                errorMessage = '⏱️ **Request timed out.**\n\nThe server is taking too long to respond. Please try again.';
+                break;
+              case 'SERVER_ERROR':
+                errorMessage = '🚫 **Server error occurred.**\n\nThe server encountered an issue. Please try again in a few moments.';
+                break;
+              default:
+                errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
+            }
+          }
+          
+          // Add or update the message with error content
+          if (!hasReceivedFirstChunk) {
+            const errorResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: errorMessage,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorResponse]);
+          } else {
+            setMessages(prev => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: errorMessage }
+                : msg
+            ));
+          }
         }
+      });
+
+      streamedConversationId = streamResult?.conversationId;
+
+      if (wasNewConversation) {
+        await syncConversationContext(streamedConversationId);
+      }
+      
+      if (attachedUrl) {
+        setAttachedUrl('');
+        setIsUploadingFile(false);
+        setConversationHasFile(true);
       }
     } catch (error) {
-      console.error('Error calling API:', error);
+      console.error('Error calling streaming API:', error);
       
       let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
       
@@ -402,14 +679,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         }
       }
       
-      const errorResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: errorMessage,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorResponse]);
+      // Update the message with error content
+      setMessages(prev => prev.map(msg => 
+        msg.id === assistantMessageId 
+          ? { ...msg, content: errorMessage }
+          : msg
+      ));
     } finally {
       setIsTyping(false);
     }
@@ -488,7 +763,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         )}
 
         {/* Loading conversation history */}
-        {isLoadingHistory && (
+        {isLoadingHistory && messages.length === 0 && (
           <div className="flex items-start space-x-3">
             <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
               <Bot className="w-4 h-4 text-primary-foreground" />

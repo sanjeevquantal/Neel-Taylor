@@ -40,15 +40,39 @@ type ConversationItem = {
   created_at?: string | null;
 };
 
+const CONVERSATION_CACHE_KEY = 'campaigner-sidebar-conversations';
+const CAMPAIGN_CACHE_KEY = 'campaigner-sidebar-campaigns';
+
+const readCache = <T,>(key: string): T | undefined => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return undefined;
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.error('Failed to read sidebar cache', err);
+    return undefined;
+  }
+};
+
+const writeCache = <T,>(key: string, value: T) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.error('Failed to write sidebar cache', err);
+  }
+};
+
 export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }, ref) => {
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [conversations, setConversations] = useState<ConversationItem[]>(() => readCache<ConversationItem[]>(CONVERSATION_CACHE_KEY) || []);
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
-  const [campaigns, setCampaigns] = useState<Array<{ id: number; name: string }>>([]);
+  const [campaigns, setCampaigns] = useState<Array<{ id: number; name: string }>>(
+    () => readCache<Array<{ id: number; name: string }>>(CAMPAIGN_CACHE_KEY) || []
+  );
 
   const handleCollapse = () => {
     const newCollapsed = !isCollapsed;
@@ -102,6 +126,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
         items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
       }
       setConversations(items);
+      writeCache(CONVERSATION_CACHE_KEY, items);
     } catch (err: any) {
       let errorMessage = 'Failed to load conversations';
       
@@ -173,6 +198,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
           items = [{ id: 1, name: data }];
         }
         setCampaigns(items);
+        writeCache(CAMPAIGN_CACHE_KEY, items);
       } catch (err: any) {
         let errorMessage = 'Failed to load campaigns';
         
@@ -287,13 +313,10 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
           <div className="mt-6">
             <div className="text-xs uppercase tracking-wider text-muted-foreground px-2 mb-2">Chats</div>
             <div className="space-y-1 max-h-72 overflow-auto pr-1">
-              {isLoadingChats && (
-                <div className="text-xs text-muted-foreground px-2 py-1">Loading…</div>
-              )}
               {chatError && (
                 <div className="text-xs text-destructive px-2 py-1">{chatError}</div>
               )}
-              {!isLoadingChats && !chatError && sortedConversations.map((c) => (
+              {!chatError && sortedConversations.map((c) => (
                 <Button
                   key={c.id}
                   variant="ghost"
@@ -308,7 +331,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
                   </span>
                 </Button>
               ))}
-              {!isLoadingChats && !chatError && sortedConversations.length === 0 && (
+              {!chatError && sortedConversations.length === 0 && !isLoadingChats && (
                 <div className="text-xs text-muted-foreground px-2 py-1">No chats yet</div>
               )}
             </div>
@@ -320,13 +343,10 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
           <div className="mt-6">
             <div className="text-xs uppercase tracking-wider text-muted-foreground px-2 mb-2">Campaigns</div>
             <div className="space-y-1 max-h-72 overflow-auto pr-1">
-              {isLoadingCampaigns && (
-                <div className="text-xs text-muted-foreground px-2 py-1">Loading…</div>
-              )}
               {campaignError && (
                 <div className="text-xs text-destructive px-2 py-1">{campaignError}</div>
               )}
-              {!isLoadingCampaigns && !campaignError && campaigns.map((c) => (
+              {!campaignError && campaigns.map((c) => (
                 <Button
                   key={c.id}
                   variant="ghost"
@@ -340,7 +360,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
                   </span>
                 </Button>
               ))}
-              {!isLoadingCampaigns && !campaignError && campaigns.length === 0 && (
+              {!campaignError && campaigns.length === 0 && !isLoadingCampaigns && (
                 <div className="text-xs text-muted-foreground px-2 py-1">No campaigns yet</div>
               )}
             </div>

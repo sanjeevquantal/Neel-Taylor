@@ -10,7 +10,7 @@ import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import { PageLoadingSpinner } from "@/components/LoadingSpinner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { campaignLoader, conversationLoader } from "./lib/loaders";
+import { campaignLoader } from "./lib/loaders";
 import { isTokenExpired } from "./lib/api";
 
 const queryClient = new QueryClient();
@@ -146,7 +146,6 @@ const router = createBrowserRouter([
       },
       {
         path: "/conversations/:id",
-        loader: conversationLoader,
         element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>,
         errorElement: <ErrorBoundary />
       },

@@ -5,7 +5,7 @@ export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 const getBaseUrl = (): string => {
   const envUrl = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   // Fallback to Render backend if not configured
-  return envUrl || "https://nealtaylorbackend.onrender.com";
+  return envUrl || "http://localhost:8000";
 };
 
 const getAuthToken = (): string | undefined => {
@@ -187,6 +187,141 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   }
 }
 
+// Streaming response handler
+export interface StreamOptions {
+  onChunk?: (chunk: string) => void;
+  onComplete?: (fullContent: string) => void;
+  onError?: (error: Error) => void;
+}
+
+export async function streamChat(
+  path: string,
+  body: FormData,
+  options: StreamOptions = {}
+): Promise<{ conversationId?: number; fullContent: string }> {
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  
+  // Add stream=true query parameter
+  const urlWithStream = `${url}${url.includes('?') ? '&' : '?'}stream=true`;
+
+  const headers: Record<string, string> = {};
+
+  const token = getValidAuthToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  let fullContent = '';
+  let conversationId: number | undefined;
+
+  try {
+    const response = await fetch(urlWithStream, {
+      method: "POST",
+      headers,
+      body,
+      credentials: "omit",
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      
+      if (response.status === 401) {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('campaigner-auth');
+        window.dispatchEvent(new CustomEvent('auth-expired'));
+      }
+      
+      let errorMessage = response.statusText || `HTTP ${response.status}`;
+      try {
+        if (text && text.trim().startsWith('{')) {
+          const json = JSON.parse(text);
+          errorMessage = json.message || json.detail || errorMessage;
+        } else if (text) {
+          errorMessage = text;
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+
+      throw new NetworkError(
+        `Request failed ${response.status}: ${errorMessage}`,
+        'SERVER_ERROR',
+        { httpStatus: response.status, rawBody: text }
+      );
+    }
+
+    const conversationHeader = response.headers.get("x-conversation-id");
+    if (conversationHeader) {
+      const parsed = Number(conversationHeader);
+      if (!Number.isNaN(parsed)) {
+        conversationId = parsed;
+      }
+    }
+
+    // Handle streaming response
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new NetworkError('No response body available', 'NETWORK_ERROR');
+    }
+
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        // Flush any remaining data in the decoder
+        const remaining = decoder.decode();
+        if (remaining) {
+          fullContent += remaining;
+          if (options.onChunk) {
+            options.onChunk(remaining);
+          }
+        }
+        break;
+      }
+
+      // Decode the chunk with stream: true to handle incomplete UTF-8 sequences
+      // The decoder maintains internal state for incomplete sequences
+      const decoded = decoder.decode(value, { stream: true });
+      
+      // Update fullContent and call onChunk with the decoded text
+      if (decoded) {
+        fullContent += decoded;
+        
+        if (options.onChunk) {
+          options.onChunk(decoded);
+        }
+      }
+    }
+
+    if (options.onComplete) {
+      options.onComplete(fullContent);
+    }
+
+    return { conversationId, fullContent };
+  } catch (error) {
+    if (error instanceof NetworkError) {
+      if (options.onError) {
+        options.onError(error);
+      }
+      throw error;
+    }
+    
+    const networkError = new NetworkError(
+      error instanceof Error ? error.message : 'An unexpected error occurred during streaming.',
+      'UNKNOWN'
+    );
+    
+    if (options.onError) {
+      options.onError(networkError);
+    }
+    
+    throw networkError;
+  }
+}
+
 export const apiClient = {
   get: <T = unknown>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
     apiFetch<T>(path, { ...(options || {}), method: "GET" }),
@@ -206,6 +341,7 @@ export const apiClient = {
     
     return apiFetch<T>(fullPath, { ...(options || {}), method: "POST", body: formData });
   },
+  streamChat,
 };
 
 export default apiClient;
