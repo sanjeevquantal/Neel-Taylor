@@ -82,10 +82,11 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
 
   const navItems = [
     { id: 'chat', label: 'AI Chat', icon: MessageSquare, path: '/' },
+    { id: 'conversations', label: 'Conversations', icon: History, path: '/conversations' },
     { id: 'campaigns', label: 'Campaigns', icon: Target, path: '/campaigns' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
-    { id: 'conversations', label: 'Conversations', icon: History, path: '/conversations' },
+    // { id: 'campaign-builder', label: 'Campaign Builder', icon: Target, path: '/campaign-builder' },
   ];
 
   // Function to fetch conversations

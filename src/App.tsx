@@ -154,6 +154,10 @@ const router = createBrowserRouter([
         element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
       },
       {
+        path: "/campaign-builder",
+        element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
         path: "/campaigns/:id",
         loader: campaignLoader,
         element: <ProtectedRoute><Campaign /></ProtectedRoute>,
