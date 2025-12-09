@@ -9,29 +9,8 @@ import { Settings } from "@/components/Settings";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Target, Mail, BarChart3, Users, Zap, ArrowRight, CheckCircle2, Clock, Play, Pause, CheckCircle, Volume2 } from "lucide-react";
 import apiClient, { NetworkError } from "@/lib/api";
-
-// Use the same cache key as Sidebar
-const CAMPAIGN_CACHE_KEY = 'campaigner-sidebar-campaigns';
-const CONVERSATION_PAGE_CACHE_KEY = 'campaigner-conversations-page';
-
-const readCache = <T,>(key: string): T | undefined => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch (err) {
-    console.error('Failed to read cache', err);
-    return undefined;
-  }
-};
-
-const writeCache = <T,>(key: string, value: T) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error('Failed to write cache', err);
-  }
-};
+import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
+import { toast } from "@/components/ui/sonner";
 
 interface IndexProps {
   onLogout: () => void;
@@ -81,7 +60,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   }>>(() => {
     // Initialize from cache like sidebar does
     // Handle both sidebar format (id, name) and full format
-    const cached = readCache<Array<any>>(CAMPAIGN_CACHE_KEY);
+    const cached = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
     if (!cached) return [];
     
     // If cached data has full structure, use it; otherwise it's sidebar format
@@ -109,7 +88,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     last_active?: string;
   }>>(() => {
     // Initialize from cache
-    const cached = readCache<Array<any>>(CONVERSATION_PAGE_CACHE_KEY);
+    const cached = readCache<Array<any>>(CACHE_KEYS.CONVERSATIONS_PAGE);
     if (!cached) return [];
     return cached.map((item: any) => ({
       id: item.id,
@@ -229,7 +208,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             // If we have existing campaigns and no new ones to add, return updated existing
             if (prevCampaigns.length > 0 && campaignsToAdd.length === 0) {
               const merged = updatedCampaigns;
-              writeCache(CAMPAIGN_CACHE_KEY, merged);
+              writeCache(CACHE_KEYS.CAMPAIGNS, merged);
               return merged;
             }
             
@@ -239,7 +218,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               : newItems;
             
             // Update cache with full data structure
-            writeCache(CAMPAIGN_CACHE_KEY, merged);
+            writeCache(CACHE_KEYS.CAMPAIGNS, merged);
             return merged;
           });
         } catch (err: any) {
@@ -354,7 +333,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             // If we have existing conversations and no new ones to add, return updated existing
             if (prevConversations.length > 0 && conversationsToAdd.length === 0) {
               const merged = updatedConversations;
-              writeCache(CONVERSATION_PAGE_CACHE_KEY, merged);
+              writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, merged);
               return merged;
             }
             
@@ -364,7 +343,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               : newItems;
             
             // Update cache with full data structure
-            writeCache(CONVERSATION_PAGE_CACHE_KEY, merged);
+            writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, merged);
             return merged;
           });
         } catch (err: any) {
@@ -418,6 +397,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               // Refresh sidebar conversations when a new conversation is created
               if (id) {
                 sidebarRef.current?.refreshConversations({ silent: true });
+                sidebarRef.current?.refreshCampaigns({ silent: true });
                 navigate(`/conversations/${id}`, { replace: true });
               }
             }} 
@@ -540,13 +520,89 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         <Button 
                           variant="default" 
                           size="sm" 
-                          className="bg-gradient-primary shadow-soft hover:shadow-medium"
+                          className="bg-gradient-primary !shadow-none hover:!shadow-none hover:!scale-100 hover:brightness-90 active:scale-95 transition-all"
                           onClick={(e) => {
                             e.stopPropagation();
                             navigate(`/campaigns/${campaign.id}`);
                           }}
                         >
                           View
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          className="!shadow-none hover:!shadow-none hover:bg-destructive/80 active:scale-95 transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const campaignName = campaign.name || `Campaign ${campaign.id}`;
+                            toast.custom((t) => (
+                              <div className="bg-background border border-border rounded-lg shadow-lg p-4 min-w-[300px]">
+                                <div className="mb-3">
+                                  <h3 className="font-semibold text-foreground mb-1">Delete Campaign</h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    Are you sure you want to delete "{campaignName}"? This action cannot be undone.
+                                  </p>
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => toast.dismiss(t)}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={async () => {
+                                      toast.dismiss(t);
+                                      try {
+                                        await apiClient.delete(`/api/campaigns/${campaign.id}`);
+                                        // Remove campaign from state
+                                        setCampaigns(prevCampaigns => {
+                                          const updated = prevCampaigns.filter(c => c.id !== campaign.id);
+                                          writeCache(CACHE_KEYS.CAMPAIGNS, updated);
+                                          return updated;
+                                        });
+                                        // Refresh sidebar campaigns
+                                        sidebarRef.current?.refreshCampaigns({ silent: true });
+                                        toast.success(`Campaign "${campaignName}" deleted successfully`);
+                                      } catch (err: any) {
+                                        let errorMessage = 'Failed to delete campaign';
+                                        if (err instanceof NetworkError) {
+                                          switch (err.type) {
+                                            case 'OFFLINE':
+                                              errorMessage = 'You appear to be offline. Please check your internet connection.';
+                                              break;
+                                            case 'NETWORK_ERROR':
+                                              errorMessage = 'Unable to connect to the server. Please check your connection.';
+                                              break;
+                                            case 'TIMEOUT':
+                                              errorMessage = 'Request timed out. Please try again.';
+                                              break;
+                                            case 'SERVER_ERROR':
+                                              errorMessage = 'Server error occurred. Please try again later.';
+                                              break;
+                                            default:
+                                              errorMessage = err.message || 'Failed to delete campaign';
+                                          }
+                                        } else {
+                                          errorMessage = err?.message || 'Failed to delete campaign';
+                                        }
+                                        toast.error(errorMessage);
+                                      }
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              </div>
+                            ), {
+                              duration: Infinity, // Keep open until user interacts
+                            });
+                          }}
+                        >
+                          Delete
                         </Button>
                         {/* <Button 
                           variant="ghost" 
@@ -780,9 +836,9 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         >
                           Continue
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
+                        {/* <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                           Export
-                        </Button>
+                        </Button> */}
                         <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                           Delete
                         </Button>

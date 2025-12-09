@@ -12,6 +12,7 @@ import { PageLoadingSpinner } from "@/components/LoadingSpinner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { campaignLoader } from "./lib/loaders";
 import { isTokenExpired } from "./lib/api";
+import { clearSidebarCaches } from "./lib/cache";
 
 const queryClient = new QueryClient();
 
@@ -68,6 +69,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem('campaigner-chat');
       localStorage.removeItem('neel-taylor-conversation-history');
       localStorage.removeItem('campaigner-chat-display');
+      // Clear sidebar caches for fresh start
+      clearSidebarCaches();
       localStorage.setItem('campaigner-auth', 'true');
     } catch (error) {
       console.error('Error clearing chat data:', error);
@@ -84,6 +87,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem('campaigner-chat-display');
       // Also remove auth token
       localStorage.removeItem('auth_token');
+      // Clear sidebar caches to prevent data leakage between users
+      clearSidebarCaches();
     } catch (error) {
       console.error('Error clearing authentication data:', error);
     }

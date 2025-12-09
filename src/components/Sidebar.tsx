@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useImperativeHandle, forwardRef } from "react";
+import { useEffect, useState, useImperativeHandle, forwardRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import {
   LogOut
 } from "lucide-react";
 import apiClient, { NetworkError } from "@/lib/api";
+import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
 
 interface SidebarProps {
   activeTab: string;
@@ -30,6 +31,7 @@ interface SidebarProps {
 
 export interface SidebarRef {
   refreshConversations: (options?: { silent?: boolean }) => Promise<void>;
+  refreshCampaigns: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 type ConversationItem = {
@@ -40,38 +42,35 @@ type ConversationItem = {
   created_at?: string | null;
 };
 
-const CONVERSATION_CACHE_KEY = 'campaigner-sidebar-conversations';
-const CAMPAIGN_CACHE_KEY = 'campaigner-sidebar-campaigns';
-
-const readCache = <T,>(key: string): T | undefined => {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch (err) {
-    console.error('Failed to read sidebar cache', err);
-    return undefined;
-  }
-};
-
-const writeCache = <T,>(key: string, value: T) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error('Failed to write sidebar cache', err);
-  }
-};
-
 export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }, ref) => {
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationItem[]>(() => readCache<ConversationItem[]>(CONVERSATION_CACHE_KEY) || []);
+  const [conversations, setConversations] = useState<ConversationItem[]>(() => readCache<ConversationItem[]>(CACHE_KEYS.CONVERSATIONS) || []);
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
-  const [campaigns, setCampaigns] = useState<Array<{ id: number; name: string }>>(
-    () => readCache<Array<{ id: number; name: string }>>(CAMPAIGN_CACHE_KEY) || []
+  const [campaigns, setCampaigns] = useState<Array<{
+    id: number;
+    name?: string;
+    status?: string;
+    created_at?: string;
+    tone?: string;
+    leads?: Array<any>;
+  }>>(
+    () => {
+      const cached = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
+      if (!cached) return [];
+      // Handle both old format (id, name) and new format (full campaign data)
+      return cached.map((item: any) => ({
+        id: item.id,
+        name: item.name || `Campaign ${item.id}`,
+        status: item.status,
+        created_at: item.created_at,
+        tone: item.tone,
+        leads: item.leads || [],
+      }));
+    }
   );
 
   const handleCollapse = () => {
@@ -95,14 +94,6 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
     if (!silent) setIsLoadingChats(true);
     setChatError(null);
     try {
-      // Get user id from storage or default to 1
-      let userId: number = 1;
-      try {
-        const stored = localStorage.getItem('campaigner-user-id');
-        if (stored) userId = Number(stored) || 1;
-        else localStorage.setItem('campaigner-user-id', String(userId));
-      } catch {}
-
       const data = await apiClient.get<any>(`/api/conversations/?load_messages=false`);
       // Normalize possible shapes: array of objects, array of strings, or object with "items"
       let items: ConversationItem[] = [];
@@ -127,7 +118,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
         items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
       }
       setConversations(items);
-      writeCache(CONVERSATION_CACHE_KEY, items);
+      writeCache(CACHE_KEYS.CONVERSATIONS, items);
     } catch (err: any) {
       let errorMessage = 'Failed to load conversations';
       
@@ -158,89 +149,128 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
     }
   };
 
+  // Function to fetch campaigns
+  const fetchCampaigns = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setIsLoadingCampaigns(true);
+    setCampaignError(null);
+    try {
+      const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
+      let items: Array<{
+        id: number;
+        name?: string;
+        status?: string;
+        created_at?: string;
+        tone?: string;
+        leads?: Array<any>;
+      }> = [];
+      if (Array.isArray(data)) {
+        items = data.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          name: it?.name || `Campaign ${it?.id ?? idx + 1}`,
+          status: it?.status || 'draft',
+          created_at: it?.created_at,
+          tone: it?.tone,
+          leads: it?.leads || [],
+        }));
+      } else if (data && Array.isArray((data as any).items)) {
+        items = (data as any).items.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          name: it?.name || `Campaign ${it?.id ?? idx + 1}`,
+          status: it?.status || 'draft',
+          created_at: it?.created_at,
+          tone: it?.tone,
+          leads: it?.leads || [],
+        }));
+      } else if (typeof data === 'string') {
+        items = [{ id: 1, name: data }];
+      }
+      setCampaigns(items);
+      writeCache(CACHE_KEYS.CAMPAIGNS, items);
+    } catch (err: any) {
+      let errorMessage = 'Failed to load campaigns';
+      
+      if (err instanceof NetworkError) {
+        switch (err.type) {
+          case 'OFFLINE':
+            errorMessage = 'You appear to be offline. Please check your internet connection.';
+            break;
+          case 'NETWORK_ERROR':
+            errorMessage = 'Unable to connect to the server. Please check your connection.';
+            break;
+          case 'TIMEOUT':
+            errorMessage = 'Request timed out. Please try again.';
+            break;
+          case 'SERVER_ERROR':
+            errorMessage = 'Server error occurred. Please try again later.';
+            break;
+          default:
+            errorMessage = err.message || 'Failed to load campaigns';
+        }
+      } else {
+        errorMessage = err?.message || 'Failed to load campaigns';
+      }
+      
+      setCampaignError(errorMessage);
+    } finally {
+      if (!silent) setIsLoadingCampaigns(false);
+    }
+  };
+
   // Fetch conversations for the sidebar list
   useEffect(() => {
-    // Only fetch when expanded to avoid wasted work on tiny sidebar
     fetchConversations();
-    // Optionally could re-fetch on interval in future
   }, []);
 
-  // Expose refresh function to parent component
-  useImperativeHandle(ref, () => ({
-    refreshConversations: (options?: { silent?: boolean }) => fetchConversations(options)
-  }), []);
-
-  // Fetch user campaigns for the sidebar list
+  // Fetch campaigns for the sidebar list
   useEffect(() => {
-    const fetchCampaigns = async () => {
-      setIsLoadingCampaigns(true);
-      setCampaignError(null);
-      try {
-        let userId: number = 1;
-        try {
-          const stored = localStorage.getItem('campaigner-user-id');
-          if (stored) userId = Number(stored) || 1;
-          else localStorage.setItem('campaigner-user-id', String(userId));
-        } catch {}
-
-        const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
-        let items: Array<{ id: number; name: string }> = [];
-        if (Array.isArray(data)) {
-          items = data.map((it: any, idx: number) => ({
-            id: Number(it?.id ?? idx + 1),
-            name: `Campaign ${it?.id ?? idx + 1}`,
-          }));
-        } else if (data && Array.isArray((data as any).items)) {
-          items = (data as any).items.map((it: any, idx: number) => ({
-            id: Number(it?.id ?? idx + 1),
-            name: `Campaign ${it?.id ?? idx + 1}`,
-          }));
-        } else if (typeof data === 'string') {
-          items = [{ id: 1, name: data }];
-        }
-        setCampaigns(items);
-        writeCache(CAMPAIGN_CACHE_KEY, items);
-      } catch (err: any) {
-        let errorMessage = 'Failed to load campaigns';
-        
-        if (err instanceof NetworkError) {
-          switch (err.type) {
-            case 'OFFLINE':
-              errorMessage = 'You appear to be offline. Please check your internet connection.';
-              break;
-            case 'NETWORK_ERROR':
-              errorMessage = 'Unable to connect to the server. Please check your connection.';
-              break;
-            case 'TIMEOUT':
-              errorMessage = 'Request timed out. Please try again.';
-              break;
-            case 'SERVER_ERROR':
-              errorMessage = 'Server error occurred. Please try again later.';
-              break;
-            default:
-              errorMessage = err.message || 'Failed to load campaigns';
-          }
-        } else {
-          errorMessage = err?.message || 'Failed to load campaigns';
-        }
-        
-        setCampaignError(errorMessage);
-      } finally {
-        setIsLoadingCampaigns(false);
-      }
-    };
-
     fetchCampaigns();
   }, []);
 
-  const sortedConversations = useMemo(() => {
-    const parseDate = (v?: string | null) => (v ? new Date(v).getTime() : 0);
-    return [...conversations].sort((a, b) => {
-      const aTime = parseDate(a.updated_at) || parseDate(a.created_at) || a.id;
-      const bTime = parseDate(b.updated_at) || parseDate(b.created_at) || b.id;
-      return bTime - aTime; // latest first
-    });
-  }, [conversations]);
+  // Periodic refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchConversations({ silent: true });
+      fetchCampaigns({ silent: true });
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Refresh on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchConversations({ silent: true });
+      fetchCampaigns({ silent: true });
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  // Listen for cache invalidation events
+  useEffect(() => {
+    const handleCacheInvalidate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ type: 'conversations' | 'campaigns' | 'all' }>;
+      const { type } = customEvent.detail || { type: 'all' };
+      
+      if (type === 'conversations' || type === 'all') {
+        fetchConversations({ silent: true });
+      }
+      if (type === 'campaigns' || type === 'all') {
+        fetchCampaigns({ silent: true });
+      }
+    };
+
+    window.addEventListener('cache-invalidate', handleCacheInvalidate);
+    return () => window.removeEventListener('cache-invalidate', handleCacheInvalidate);
+  }, []);
+
+  // Expose refresh functions to parent component
+  useImperativeHandle(ref, () => ({
+    refreshConversations: (options?: { silent?: boolean }) => fetchConversations(options),
+    refreshCampaigns: (options?: { silent?: boolean }) => fetchCampaigns(options)
+  }), []);
 
   return (
     <Card className={`h-screen bg-gradient-card border-r transition-all duration-300 ${
@@ -308,65 +338,6 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
             )}
           </Button>
         ))}
-
-        {/* Chats list */}
-        {!isCollapsed && (
-          <div className="mt-6">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground px-2 mb-2">Chats</div>
-            <div className="space-y-1 max-h-72 overflow-auto pr-1">
-              {chatError && (
-                <div className="text-xs text-destructive px-2 py-1">{chatError}</div>
-              )}
-              {!chatError && sortedConversations.map((c) => (
-                <Button
-                  key={c.id}
-                  variant="ghost"
-                  className="w-full justify-start h-9 text-left px-2"
-                  onClick={() => {
-                    onSelectConversation?.(c.id);
-                    onTabChange('chat');
-                  }}
-                >
-                  <span className="truncate">
-                    {c.title?.trim() || `Conversation ${c.id}`}
-                  </span>
-                </Button>
-              ))}
-              {!chatError && sortedConversations.length === 0 && !isLoadingChats && (
-                <div className="text-xs text-muted-foreground px-2 py-1">No chats yet</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Campaigns list */}
-        {!isCollapsed && (
-          <div className="mt-6">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground px-2 mb-2">Campaigns</div>
-            <div className="space-y-1 max-h-72 overflow-auto pr-1">
-              {campaignError && (
-                <div className="text-xs text-destructive px-2 py-1">{campaignError}</div>
-              )}
-              {!campaignError && campaigns.map((c) => (
-                <Button
-                  key={c.id}
-                  variant="ghost"
-                  className="w-full justify-start h-9 text-left px-2"
-                  onClick={() => {
-                    onSelectCampaign?.(c.id);
-                  }}
-                >
-                  <span className="truncate">
-                    {c.name}
-                  </span>
-                </Button>
-              ))}
-              {!campaignError && campaigns.length === 0 && !isLoadingCampaigns && (
-                <div className="text-xs text-muted-foreground px-2 py-1">No campaigns yet</div>
-              )}
-            </div>
-          </div>
-        )}
       </nav>
 
       {/* Footer */}
