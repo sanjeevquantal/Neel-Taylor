@@ -344,4 +344,22 @@ export const apiClient = {
   streamChat,
 };
 
+// Credit usage response interface
+export interface CreditUsageResponse {
+  user_id: number;
+  plan_limit: number;
+  credits_used: number;
+  credits_remaining: number;
+  usage_percentage: number;
+  lifetime_tokens_used: number;
+  billing_cycle_start: string;
+  billing_cycle_end: string;
+  alert_status: string | null;
+}
+
+// Function to fetch user credits
+export const fetchUserCredits = async (): Promise<CreditUsageResponse> => {
+  return apiClient.get<CreditUsageResponse>('/api/users/me/credits');
+};
+
 export default apiClient;

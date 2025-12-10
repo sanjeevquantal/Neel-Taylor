@@ -5,7 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { apiClient } from "@/lib/api";
+import { apiClient, fetchUserCredits } from "@/lib/api";
+import { writeCache, CACHE_KEYS } from "@/lib/cache";
 import { useToast } from "@/components/ui/use-toast";
 
 interface LoginProps {
@@ -188,7 +189,13 @@ const Login = ({ onLogin }: LoginProps) => {
           description: "You've been successfully signed in.",
           duration: 3000,
         });
-    onLogin();
+        // Fetch credits after successful login
+        fetchUserCredits()
+          .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+          .catch(err => {
+            console.error('Failed to fetch credits on login:', err);
+          });
+        onLogin();
       }
     } catch (error: any) {
       const friendlyMessage = getErrorMessage(error);

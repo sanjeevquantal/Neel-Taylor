@@ -162,5 +162,6 @@ export const CACHE_KEYS = {
   CAMPAIGNS: 'campaigner-sidebar-campaigns',
   CONVERSATIONS_PAGE: 'campaigner-conversations-page',
   DASHBOARD: 'campaigner-dashboard',
+  CREDITS: 'campaigner-credits',
 } as const;
 

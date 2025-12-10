@@ -17,7 +17,7 @@ import {
   History,
   LogOut
 } from "lucide-react";
-import apiClient, { NetworkError } from "@/lib/api";
+import apiClient, { NetworkError, fetchUserCredits } from "@/lib/api";
 import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
 
 interface SidebarProps {
@@ -52,7 +52,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
   const [campaignError, setCampaignError] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<Array<{
     id: number;
-    name?: string;
+    title?: string;
     status?: string;
     created_at?: string;
     tone?: string;
@@ -61,10 +61,10 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
     () => {
       const cached = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
       if (!cached) return [];
-      // Handle both old format (id, name) and new format (full campaign data)
+      // Handle both old format (id, title) and new format (full campaign data)
       return cached.map((item: any) => ({
         id: item.id,
-        name: item.name || `Campaign ${item.id}`,
+        title: item.title || `Campaign ${item.id}`,
         status: item.status,
         created_at: item.created_at,
         tone: item.tone,
@@ -158,7 +158,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
       const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
       let items: Array<{
         id: number;
-        name?: string;
+        title?: string;
         status?: string;
         created_at?: string;
         tone?: string;
@@ -167,7 +167,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
       if (Array.isArray(data)) {
         items = data.map((it: any, idx: number) => ({
           id: Number(it?.id ?? idx + 1),
-          name: it?.name || `Campaign ${it?.id ?? idx + 1}`,
+          title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
           status: it?.status || 'draft',
           created_at: it?.created_at,
           tone: it?.tone,
@@ -176,17 +176,24 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
       } else if (data && Array.isArray((data as any).items)) {
         items = (data as any).items.map((it: any, idx: number) => ({
           id: Number(it?.id ?? idx + 1),
-          name: it?.name || `Campaign ${it?.id ?? idx + 1}`,
+          title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
           status: it?.status || 'draft',
           created_at: it?.created_at,
           tone: it?.tone,
           leads: it?.leads || [],
         }));
       } else if (typeof data === 'string') {
-        items = [{ id: 1, name: data }];
+        items = [{ id: 1, title: data }];
       }
       setCampaigns(items);
       writeCache(CACHE_KEYS.CAMPAIGNS, items);
+      
+      // Fetch credits when campaigns are refreshed (campaign creation may have updated credits)
+      fetchUserCredits()
+        .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+        .catch(err => {
+          console.error('Failed to fetch credits after campaign refresh:', err);
+        });
     } catch (err: any) {
       let errorMessage = 'Failed to load campaigns';
       

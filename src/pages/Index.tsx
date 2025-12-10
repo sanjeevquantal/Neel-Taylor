@@ -8,9 +8,17 @@ import { CampaignBuilder } from "@/components/CampaignBuilder";
 import { Settings } from "@/components/Settings";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Target, Mail, BarChart3, Users, Zap, ArrowRight, CheckCircle2, Clock, Play, Pause, CheckCircle, Volume2 } from "lucide-react";
-import apiClient, { NetworkError } from "@/lib/api";
+import apiClient, { NetworkError, fetchUserCredits, CreditUsageResponse } from "@/lib/api";
 import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
 import { toast } from "@/components/ui/sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface IndexProps {
   onLogout: () => void;
@@ -52,25 +60,27 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   });
   const [campaigns, setCampaigns] = useState<Array<{
     id: number;
-    name?: string;
+    title?: string;
     status?: string;
     created_at?: string;
     tone?: string;
     leads?: Array<any>;
+    conversation_id?: number;
   }>>(() => {
     // Initialize from cache like sidebar does
-    // Handle both sidebar format (id, name) and full format
+    // Handle both sidebar format (id, title) and full format
     const cached = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
     if (!cached) return [];
     
     // If cached data has full structure, use it; otherwise it's sidebar format
     return cached.map((item: any) => ({
       id: item.id,
-      name: item.name || `Campaign ${item.id}`,
+      title: item.title || `Campaign ${item.id}`,
       status: item.status,
       created_at: item.created_at,
       tone: item.tone,
       leads: item.leads || [],
+      conversation_id: item.conversation_id,
     }));
   });
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
@@ -86,6 +96,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     message_count?: number;
     created_at?: string;
     last_active?: string;
+    has_campaign?: boolean;
   }>>(() => {
     // Initialize from cache
     const cached = readCache<Array<any>>(CACHE_KEYS.CONVERSATIONS_PAGE);
@@ -100,10 +111,26 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       message_count: item.message_count || 0,
       created_at: item.created_at,
       last_active: item.last_active,
+      has_campaign: item.has_campaign || false,
     }));
   });
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
+  
+  // Delete dialog states
+  const [deleteCampaignDialog, setDeleteCampaignDialog] = useState<{
+    open: boolean;
+    campaignId: number | null;
+    campaignName: string;
+    conversationTitle: string | null;
+  }>({ open: false, campaignId: null, campaignName: "", conversationTitle: null });
+  
+  const [deleteConversationDialog, setDeleteConversationDialog] = useState<{
+    open: boolean;
+    conversationId: number | null;
+    conversationTitle: string;
+    campaignName: string | null;
+  }>({ open: false, conversationId: null, conversationTitle: "", campaignName: null });
 
   // Update active tab when URL changes
   useEffect(() => {
@@ -131,6 +158,22 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }
   }, [isSidebarCollapsed]);
 
+  // Fetch credits when user opens platform (on mount or fresh login)
+  useEffect(() => {
+    if (freshLogin) {
+      // Check cache first
+      const cachedCredits = readCache<CreditUsageResponse>(CACHE_KEYS.CREDITS);
+      if (!cachedCredits) {
+        // Only fetch if not in cache
+        fetchUserCredits()
+          .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+          .catch(err => {
+            console.error('Failed to fetch credits on platform open:', err);
+          });
+      }
+    }
+  }, [freshLogin]);
+
   // Sync URL param conversation id into local state
   useEffect(() => {
     const urlId = params.id ? Number(params.id) : null;
@@ -157,7 +200,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
           const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
           let newItems: Array<{
             id: number;
-            name?: string;
+            title?: string;
             status?: string;
             created_at?: string;
             tone?: string;
@@ -167,20 +210,22 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
           if (Array.isArray(data)) {
             newItems = data.map((it: any, idx: number) => ({
               id: Number(it?.id ?? idx + 1),
-              name: it?.name || `Campaign ${it?.id ?? idx + 1}`,
+              title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
               status: it?.status || 'draft',
               created_at: it?.created_at,
               tone: it?.tone,
               leads: it?.leads || [],
+              conversation_id: it?.conversation_id,
             }));
           } else if (data && Array.isArray((data as any).items)) {
             newItems = (data as any).items.map((it: any, idx: number) => ({
               id: Number(it?.id ?? idx + 1),
-              name: it?.name || `Campaign ${it?.id ?? idx + 1}`,
+              title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
               status: it?.status || 'draft',
               created_at: it?.created_at,
               tone: it?.tone,
               leads: it?.leads || [],
+              conversation_id: it?.conversation_id,
             }));
           }
           
@@ -297,6 +342,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               message_count: it?.message_count || 0,
               created_at: it?.created_at,
               last_active: it?.last_active || it?.created_at,
+              has_campaign: it?.has_campaign || false,
             }));
           } else if (data && Array.isArray((data as any).items)) {
             newItems = (data as any).items.map((it: any, idx: number) => ({
@@ -309,6 +355,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               message_count: it?.message_count || 0,
               created_at: it?.created_at,
               last_active: it?.last_active || it?.created_at,
+              has_campaign: it?.has_campaign || false,
             }));
           }
           
@@ -398,6 +445,12 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               if (id) {
                 sidebarRef.current?.refreshConversations({ silent: true });
                 sidebarRef.current?.refreshCampaigns({ silent: true });
+                // Fetch credits when new conversation is created
+                fetchUserCredits()
+                  .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+                  .catch(err => {
+                    console.error('Failed to fetch credits after conversation creation:', err);
+                  });
                 navigate(`/conversations/${id}`, { replace: true });
               }
             }} 
@@ -488,7 +541,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="font-semibold text-lg">{campaign.name || `Campaign ${campaign.id}`}</h3>
+                          <h3 className="font-semibold text-lg">{campaign.title || `Campaign ${campaign.id}`}</h3>
                           <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(campaign.status)}`}>
                             {campaign.status || 'draft'}
                           </span>
@@ -534,71 +587,21 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                           className="!shadow-none hover:!shadow-none hover:bg-destructive/80 active:scale-95 transition-all"
                           onClick={(e) => {
                             e.stopPropagation();
-                            const campaignName = campaign.name || `Campaign ${campaign.id}`;
-                            toast.custom((t) => (
-                              <div className="bg-background border border-border rounded-lg shadow-lg p-4 min-w-[300px]">
-                                <div className="mb-3">
-                                  <h3 className="font-semibold text-foreground mb-1">Delete Campaign</h3>
-                                  <p className="text-sm text-muted-foreground">
-                                    Are you sure you want to delete "{campaignName}"? This action cannot be undone.
-                                  </p>
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => toast.dismiss(t)}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={async () => {
-                                      toast.dismiss(t);
-                                      try {
-                                        await apiClient.delete(`/api/campaigns/${campaign.id}`);
-                                        // Remove campaign from state
-                                        setCampaigns(prevCampaigns => {
-                                          const updated = prevCampaigns.filter(c => c.id !== campaign.id);
-                                          writeCache(CACHE_KEYS.CAMPAIGNS, updated);
-                                          return updated;
-                                        });
-                                        // Refresh sidebar campaigns
-                                        sidebarRef.current?.refreshCampaigns({ silent: true });
-                                        toast.success(`Campaign "${campaignName}" deleted successfully`);
-                                      } catch (err: any) {
-                                        let errorMessage = 'Failed to delete campaign';
-                                        if (err instanceof NetworkError) {
-                                          switch (err.type) {
-                                            case 'OFFLINE':
-                                              errorMessage = 'You appear to be offline. Please check your internet connection.';
-                                              break;
-                                            case 'NETWORK_ERROR':
-                                              errorMessage = 'Unable to connect to the server. Please check your connection.';
-                                              break;
-                                            case 'TIMEOUT':
-                                              errorMessage = 'Request timed out. Please try again.';
-                                              break;
-                                            case 'SERVER_ERROR':
-                                              errorMessage = 'Server error occurred. Please try again later.';
-                                              break;
-                                            default:
-                                              errorMessage = err.message || 'Failed to delete campaign';
-                                          }
-                                        } else {
-                                          errorMessage = err?.message || 'Failed to delete campaign';
-                                        }
-                                        toast.error(errorMessage);
-                                      }
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </div>
-                            ), {
-                              duration: Infinity, // Keep open until user interacts
+                            const campaignName = campaign.title || `Campaign ${campaign.id}`;
+                            const hasConversation = campaign.conversation_id !== undefined && campaign.conversation_id !== null;
+                            
+                            // Find conversation title from existing conversations state
+                            let conversationTitle: string | null = null;
+                            if (hasConversation && campaign.conversation_id) {
+                              const associatedConversation = conversations.find(c => c.id === campaign.conversation_id);
+                              conversationTitle = associatedConversation?.title || `Conversation #${campaign.conversation_id}`;
+                            }
+                            
+                            setDeleteCampaignDialog({
+                              open: true,
+                              campaignId: campaign.id,
+                              campaignName,
+                              conversationTitle,
                             });
                           }}
                         >
@@ -839,7 +842,78 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         {/* <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                           Export
                         </Button> */}
-                        <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          className="!shadow-none hover:!shadow-none hover:bg-destructive/80 active:scale-95 transition-all"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const conversationTitle = conversation.title || `Conversation #${conversation.id}`;
+                            const hasCampaign = conversation.has_campaign || false;
+                            
+                            // Find campaign name from existing campaigns state
+                            let campaignName: string | null = null;
+                            if (hasCampaign) {
+                              // First check in current campaigns state
+                              let associatedCampaign = campaigns.find(c => c.conversation_id === conversation.id);
+                              
+                              // If not found in state, check cache
+                              if (!associatedCampaign) {
+                                const cachedCampaigns = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
+                                if (cachedCampaigns) {
+                                  associatedCampaign = cachedCampaigns.find((c: any) => c.conversation_id === conversation.id);
+                                }
+                              }
+                              
+                              // If still not found, fetch campaigns to find the associated one
+                              if (!associatedCampaign) {
+                                try {
+                                  const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
+                                  let allCampaigns: Array<any> = [];
+                                  
+                                  if (Array.isArray(data)) {
+                                    allCampaigns = data;
+                                  } else if (data && Array.isArray((data as any).items)) {
+                                    allCampaigns = (data as any).items;
+                                  }
+                                  
+                                  associatedCampaign = allCampaigns.find((c: any) => c.conversation_id === conversation.id);
+                                  
+                                  // Update campaigns state with fetched data
+                                  if (allCampaigns.length > 0) {
+                                    setCampaigns(prevCampaigns => {
+                                      const existingIds = new Set(prevCampaigns.map(c => c.id));
+                                      const newItems = allCampaigns.map((it: any) => ({
+                                        id: Number(it?.id ?? 0),
+                                        name: it?.name || `Campaign ${it?.id ?? 0}`,
+                                        status: it?.status || 'draft',
+                                        created_at: it?.created_at,
+                                        tone: it?.tone,
+                                        leads: it?.leads || [],
+                                        conversation_id: it?.conversation_id,
+                                      }));
+                                      const campaignsToAdd = newItems.filter(item => !existingIds.has(item.id));
+                                      return [...prevCampaigns, ...campaignsToAdd];
+                                    });
+                                  }
+                                } catch (err) {
+                                  console.error('Failed to fetch campaigns for delete dialog:', err);
+                                }
+                              }
+                              
+                              if (associatedCampaign) {
+                                campaignName = associatedCampaign.title || `Campaign ${associatedCampaign.id}`;
+                              }
+                            }
+                            
+                            setDeleteConversationDialog({
+                              open: true,
+                              conversationId: conversation.id,
+                              conversationTitle,
+                              campaignName,
+                            });
+                          }}
+                        >
                           Delete
                         </Button>
                       </div>
@@ -897,7 +971,196 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       <main className={`${isSidebarCollapsed ? 'ml-16' : 'ml-64'} transition-all duration-300 overflow-auto min-h-screen`}>
         {renderContent()}
       </main>
-      {/* Campaign details modal removed in favor of dedicated route */}
+      
+      {/* Delete Campaign Dialog */}
+      <Dialog open={deleteCampaignDialog.open} onOpenChange={(open) => setDeleteCampaignDialog({ ...deleteCampaignDialog, open })}>
+        <DialogContent className="max-w-2xl w-[90%] sm:w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">Delete Campaign</DialogTitle>
+            <DialogDescription className="text-base">
+              Are you sure you want to delete "{deleteCampaignDialog.campaignName}"?
+              {deleteCampaignDialog.conversationTitle && (
+                <span className="block mt-4 font-medium text-lg text-destructive">
+                  ⚠️ The associated conversation "{deleteCampaignDialog.conversationTitle}" will also be deleted. This action cannot be undone.
+                </span>
+              )}
+              {!deleteCampaignDialog.conversationTitle && (
+                <span className="block mt-4">This action cannot be undone.</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-3">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => setDeleteCampaignDialog({ ...deleteCampaignDialog, open: false })}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="lg"
+              onClick={async () => {
+                if (!deleteCampaignDialog.campaignId) return;
+                
+                // Store the campaign data for potential restoration
+                const campaignToDelete = campaigns.find(c => c.id === deleteCampaignDialog.campaignId);
+                const campaignId = deleteCampaignDialog.campaignId;
+                const campaignName = deleteCampaignDialog.campaignName;
+                
+                // Close modal immediately
+                setDeleteCampaignDialog({ open: false, campaignId: null, campaignName: "", conversationTitle: null });
+                
+                // Optimistically remove campaign from UI
+                setCampaigns(prevCampaigns => {
+                  const updated = prevCampaigns.filter(c => c.id !== campaignId);
+                  writeCache(CACHE_KEYS.CAMPAIGNS, updated);
+                  return updated;
+                });
+                
+                // Refresh sidebar campaigns
+                sidebarRef.current?.refreshCampaigns({ silent: true });
+                
+                // Perform deletion in background
+                try {
+                  await apiClient.delete(`/api/campaigns/${campaignId}`);
+                  toast.success(`Campaign "${campaignName}" deleted successfully`);
+                } catch (err: any) {
+                  // Restore campaign on error
+                  if (campaignToDelete) {
+                    setCampaigns(prevCampaigns => {
+                      const restored = [...prevCampaigns, campaignToDelete];
+                      writeCache(CACHE_KEYS.CAMPAIGNS, restored);
+                      return restored;
+                    });
+                    sidebarRef.current?.refreshCampaigns({ silent: true });
+                  }
+                  
+                  let errorMessage = 'Failed to delete campaign';
+                  if (err instanceof NetworkError) {
+                    switch (err.type) {
+                      case 'OFFLINE':
+                        errorMessage = 'You appear to be offline. Please check your internet connection.';
+                        break;
+                      case 'NETWORK_ERROR':
+                        errorMessage = 'Unable to connect to the server. Please check your connection.';
+                        break;
+                      case 'TIMEOUT':
+                        errorMessage = 'Request timed out. Please try again.';
+                        break;
+                      case 'SERVER_ERROR':
+                        errorMessage = 'Server error occurred. Please try again later.';
+                        break;
+                      default:
+                        errorMessage = err.message || 'Failed to delete campaign';
+                    }
+                  } else {
+                    errorMessage = err?.message || 'Failed to delete campaign';
+                  }
+                  toast.error(errorMessage);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Conversation Dialog */}
+      <Dialog open={deleteConversationDialog.open} onOpenChange={(open) => setDeleteConversationDialog({ ...deleteConversationDialog, open })}>
+        <DialogContent className="max-w-2xl w-[90%] sm:w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">Delete Conversation</DialogTitle>
+            <DialogDescription className="text-base">
+              Are you sure you want to delete "{deleteConversationDialog.conversationTitle}"?
+              {deleteConversationDialog.campaignName && (
+                <span className="block mt-4 font-medium text-lg text-destructive">
+                  ⚠️ The associated campaign "{deleteConversationDialog.campaignName}" will also be deleted. This action cannot be undone.
+                </span>
+              )}
+              {!deleteConversationDialog.campaignName && (
+                <span className="block mt-4">This action cannot be undone.</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-3">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => setDeleteConversationDialog({ ...deleteConversationDialog, open: false })}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="lg"
+              onClick={async () => {
+                if (!deleteConversationDialog.conversationId) return;
+                
+                // Store the conversation data for potential restoration
+                const conversationToDelete = conversations.find(c => c.id === deleteConversationDialog.conversationId);
+                const conversationId = deleteConversationDialog.conversationId;
+                const conversationTitle = deleteConversationDialog.conversationTitle;
+                
+                // Close modal immediately
+                setDeleteConversationDialog({ open: false, conversationId: null, conversationTitle: "", campaignName: null });
+                
+                // Optimistically remove conversation from UI
+                setConversations(prevConversations => {
+                  const updated = prevConversations.filter(c => c.id !== conversationId);
+                  writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, updated);
+                  return updated;
+                });
+                
+                // Refresh sidebar conversations
+                sidebarRef.current?.refreshConversations({ silent: true });
+                
+                // Perform deletion in background
+                try {
+                  await apiClient.delete(`/api/conversations/${conversationId}`);
+                  toast.success(`Conversation "${conversationTitle}" deleted successfully`);
+                } catch (err: any) {
+                  // Restore conversation on error
+                  if (conversationToDelete) {
+                    setConversations(prevConversations => {
+                      const restored = [...prevConversations, conversationToDelete];
+                      writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, restored);
+                      return restored;
+                    });
+                    sidebarRef.current?.refreshConversations({ silent: true });
+                  }
+                  
+                  let errorMessage = 'Failed to delete conversation';
+                  if (err instanceof NetworkError) {
+                    switch (err.type) {
+                      case 'OFFLINE':
+                        errorMessage = 'You appear to be offline. Please check your internet connection.';
+                        break;
+                      case 'NETWORK_ERROR':
+                        errorMessage = 'Unable to connect to the server. Please check your connection.';
+                        break;
+                      case 'TIMEOUT':
+                        errorMessage = 'Request timed out. Please try again.';
+                        break;
+                      case 'SERVER_ERROR':
+                        errorMessage = 'Server error occurred. Please try again later.';
+                        break;
+                      default:
+                        errorMessage = err.message || 'Failed to delete conversation';
+                    }
+                  } else {
+                    errorMessage = err?.message || 'Failed to delete conversation';
+                  }
+                  toast.error(errorMessage);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

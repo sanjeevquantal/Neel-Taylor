@@ -12,7 +12,8 @@ import {
   Paperclip,
   X
 } from "lucide-react";
-import apiClient, { NetworkError, streamChat } from "@/lib/api";
+import apiClient, { NetworkError, streamChat, fetchUserCredits } from "@/lib/api";
+import { writeCache, CACHE_KEYS } from "@/lib/cache";
 import { UploadModal } from "@/components/UploadModal";
 
 // Simple but structured markdown parser for chat messages
@@ -411,6 +412,14 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             ));
           }
 
+          // Fetch credits after chat completes (campaigns/credits may have been updated)
+          if (conversationId) {
+            fetchUserCredits()
+              .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+              .catch(err => {
+                console.error('Failed to fetch credits after chat:', err);
+              });
+          }
         },
         onError: (error: Error) => {
           console.error('Streaming error:', error);
@@ -598,6 +607,15 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           setAttachedUrl('');
           setIsUploadingFile(false);
             setConversationHasFile(true);
+          }
+
+          // Fetch credits after chat completes (campaigns/credits may have been updated)
+          if (conversationId) {
+            fetchUserCredits()
+              .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+              .catch(err => {
+                console.error('Failed to fetch credits after chat:', err);
+              });
           }
         },
         onError: (error: Error) => {
