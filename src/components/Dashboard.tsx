@@ -28,6 +28,9 @@ interface DashboardStats {
   personas_change: number;
   conversion_rate: number;
   conversion_rate_change: number;
+  total_opens: number;
+  total_bounces: number;
+  avg_open_rate: number;
 }
 
 interface RecentCampaign {
@@ -39,6 +42,9 @@ interface RecentCampaign {
   sent_count: number;
   response_count: number;
   persona: string;
+  open_count: number;
+  bounce_count: number;
+  reply_count: number;
 }
 
 interface RecentActivity {
@@ -342,18 +348,23 @@ export const Dashboard = () => {
                         {campaign.status}
                       </Badge>
                     </div>
-                    <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                    <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                       <span>Persona: {campaign.persona}</span>
-                      <span>Tone: {campaign.tone}</span>
-                      <span>Created: {formatDate(campaign.created_at)}</span>
+                      <span className="whitespace-nowrap">Tone: {campaign.tone}</span>
+                      <span className="whitespace-nowrap">Created: {formatDate(campaign.created_at)}</span>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-medium">
                       {campaign.response_count} responses
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {campaign.sent_count} sent
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div>{campaign.sent_count} sent</div>
+                      <div className="flex items-center justify-end gap-3 mt-1">
+                        <span className="text-xs">{campaign.open_count} opens</span>
+                        <span className="text-xs">{campaign.bounce_count} bounces</span>
+                        <span className="text-xs">{campaign.reply_count} replies</span>
+                      </div>
                     </div>
                     {campaign.sent_count > 0 && (
                       <div className="w-20 mt-2">
@@ -370,7 +381,7 @@ export const Dashboard = () => {
         {/* Quick Actions & Activity */}
         <div className="space-y-6">
           {/* Quick Actions */}
-          <Card className="p-6 bg-gradient-card shadow-soft">
+          {/* <Card className="p-6 bg-gradient-card shadow-soft">
             <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
             <div className="space-y-3">
               <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/')}>
@@ -390,7 +401,7 @@ export const Dashboard = () => {
                 View Analytics
               </Button>
             </div>
-          </Card>
+          </Card> */}
 
           {/* Recent Activity */}
           <Card className="p-6 bg-gradient-card shadow-soft">
@@ -416,7 +427,7 @@ export const Dashboard = () => {
 
           {/* Usage Stats */}
           <Card className="p-6 bg-gradient-card shadow-soft">
-            <h2 className="text-xl font-semibold mb-4">Usage This Month</h2>
+            <h2 className="text-xl font-semibold mb-4">Email Performance & Usage</h2>
             <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -434,13 +445,33 @@ export const Dashboard = () => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm">Emails Sent</span>
                   <span className="text-sm font-medium">
-                    {dashboardData.usage.emails_sent.toLocaleString()} / {dashboardData.usage.emails_limit.toLocaleString()}
+                    {dashboardData.usage.emails_sent.toLocaleString()}
                   </span>
                 </div>
-                <Progress 
-                  value={(dashboardData.usage.emails_sent / dashboardData.usage.emails_limit) * 100} 
-                  className="h-2" 
-                />
+              </div>
+              <div className="pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm">Total Opens</span>
+                  <span className="text-sm font-medium">
+                    {dashboardData.stats.total_opens.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm">Total Bounces</span>
+                  <span className="text-sm font-medium">
+                    {dashboardData.stats.total_bounces.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm">Avg Open Rate</span>
+                  <span className="text-sm font-medium">
+                    {dashboardData.stats.avg_open_rate.toFixed(1)}%
+                  </span>
+                </div>
               </div>
             </div>
             <Button variant="outline" className="w-full mt-4">

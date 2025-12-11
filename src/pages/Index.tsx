@@ -117,6 +117,175 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   
+  // Sidebar conversations state (simpler format for sidebar list)
+  const [sidebarConversations, setSidebarConversations] = useState<Array<{
+    id: number;
+    title?: string | null;
+    last_message?: string | null;
+    updated_at?: string | null;
+    created_at?: string | null;
+  }>>(() => {
+    const cached = readCache<Array<any>>(CACHE_KEYS.CONVERSATIONS);
+    if (!cached) return [];
+    return cached.map((item: any) => ({
+      id: item.id,
+      title: item.title ?? item.name ?? null,
+      last_message: item.last_message ?? item.lastMessage ?? null,
+      updated_at: item.updated_at ?? item.updatedAt ?? null,
+      created_at: item.created_at ?? item.createdAt ?? null,
+    }));
+  });
+  const [isLoadingSidebarConversations, setIsLoadingSidebarConversations] = useState(false);
+  
+  // Fetch sidebar conversations (simpler format for sidebar list)
+  const fetchSidebarConversations = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setIsLoadingSidebarConversations(true);
+    try {
+      const data = await apiClient.get<any>(`/api/conversations/?load_messages=false`);
+      let items: Array<{
+        id: number;
+        title?: string | null;
+        last_message?: string | null;
+        updated_at?: string | null;
+        created_at?: string | null;
+      }> = [];
+      
+      if (Array.isArray(data)) {
+        items = data.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title ?? it?.name ?? null,
+          last_message: it?.last_message ?? it?.lastMessage ?? null,
+          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
+          created_at: it?.created_at ?? it?.createdAt ?? null,
+        }));
+      } else if (data && Array.isArray((data as any).items)) {
+        items = (data as any).items.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title ?? it?.name ?? null,
+          last_message: it?.last_message ?? it?.lastMessage ?? null,
+          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
+          created_at: it?.created_at ?? it?.createdAt ?? null,
+        }));
+      } else if (typeof data === 'string') {
+        items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
+      }
+      
+      // Filter out pending deletions
+      const filtered = items.filter(item => !pendingDeletedConversations.current.has(item.id));
+      setSidebarConversations(filtered);
+      writeCache(CACHE_KEYS.CONVERSATIONS, filtered);
+    } catch (err: any) {
+      console.error('Failed to load sidebar conversations:', err);
+    } finally {
+      if (!silent) setIsLoadingSidebarConversations(false);
+    }
+  };
+
+  // Fetch sidebar campaigns (for sidebar list)
+  const fetchSidebarCampaigns = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    try {
+      const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
+      let items: Array<{
+        id: number;
+        title?: string;
+        status?: string;
+        created_at?: string;
+        tone?: string;
+        leads?: Array<any>;
+      }> = [];
+      
+      if (Array.isArray(data)) {
+        items = data.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
+          status: it?.status || 'draft',
+          created_at: it?.created_at,
+          tone: it?.tone,
+          leads: it?.leads || [],
+        }));
+      } else if (data && Array.isArray((data as any).items)) {
+        items = (data as any).items.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
+          status: it?.status || 'draft',
+          created_at: it?.created_at,
+          tone: it?.tone,
+          leads: it?.leads || [],
+        }));
+      } else if (typeof data === 'string') {
+        items = [{ id: 1, title: data }];
+      }
+      
+      // Filter out pending deletions
+      const filtered = items.filter(item => !pendingDeletedCampaigns.current.has(item.id));
+      // Note: campaigns state is managed by the campaigns tab useEffect, but we update cache here
+      writeCache(CACHE_KEYS.CAMPAIGNS, filtered);
+      
+      // Fetch credits when campaigns are refreshed
+      fetchUserCredits()
+        .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+        .catch(err => {
+          console.error('Failed to fetch credits after campaign refresh:', err);
+        });
+    } catch (err: any) {
+      console.error('Failed to load sidebar campaigns:', err);
+    }
+  };
+
+  // Fetch sidebar conversations on mount
+  useEffect(() => {
+    fetchSidebarConversations();
+  }, []);
+
+  // Expose refresh functions via ref
+  useEffect(() => {
+    if (sidebarRef.current) {
+      (sidebarRef.current as any).refreshConversations = fetchSidebarConversations;
+      (sidebarRef.current as any).refreshCampaigns = fetchSidebarCampaigns;
+    }
+  }, []);
+
+  // Periodic refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchSidebarConversations({ silent: true });
+      fetchSidebarCampaigns({ silent: true });
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Refresh on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchSidebarConversations({ silent: true });
+      fetchSidebarCampaigns({ silent: true });
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  // Listen for cache invalidation events
+  useEffect(() => {
+    const handleCacheInvalidate = (event: Event) => {
+      const customEvent = event as CustomEvent<{ type: 'conversations' | 'campaigns' | 'all' }>;
+      const { type } = customEvent.detail || { type: 'all' };
+      
+      if (type === 'conversations' || type === 'all') {
+        fetchSidebarConversations({ silent: true });
+      }
+      if (type === 'campaigns' || type === 'all') {
+        fetchSidebarCampaigns({ silent: true });
+      }
+    };
+
+    window.addEventListener('cache-invalidate', handleCacheInvalidate);
+    return () => window.removeEventListener('cache-invalidate', handleCacheInvalidate);
+  }, []);
+  
   // Delete dialog states
   const [deleteCampaignDialog, setDeleteCampaignDialog] = useState<{
     open: boolean;
@@ -131,6 +300,10 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     conversationTitle: string;
     campaignName: string | null;
   }>({ open: false, conversationId: null, conversationTitle: "", campaignName: null });
+
+  // Track pending deletions to prevent reappearing during race conditions
+  const pendingDeletedCampaigns = useRef<Set<number>>(new Set());
+  const pendingDeletedConversations = useRef<Set<number>>(new Set());
 
   // Update active tab when URL changes
   useEffect(() => {
@@ -185,15 +358,25 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   // Fetch campaigns when campaigns tab is active - only sync new campaigns, don't replace
   // Use a ref to track if we've loaded initially to avoid refetching on every tab switch
   const campaignsLoadedRef = useRef(false);
+  // Track if we've ever loaded (even if empty) - never reset this
+  const campaignsEverLoadedRef = useRef(false);
   
   useEffect(() => {
-    if (activeTab === 'campaigns' && !campaignsLoadedRef.current) {
-      campaignsLoadedRef.current = true;
-      
+    if (activeTab === 'campaigns') {
       const fetchCampaigns = async () => {
-        // Only show loading if we don't have cached campaigns
-        if (campaigns.length === 0) {
-          setIsLoadingCampaigns(true);
+        // Only show loading on very first load ever (when we've never loaded before)
+        const isFirstLoadEver = !campaignsEverLoadedRef.current;
+        if (isFirstLoadEver) {
+          campaignsEverLoadedRef.current = true;
+          if (campaigns.length === 0) {
+            setIsLoadingCampaigns(true);
+          }
+        }
+        
+        // Track if this is the first load in this session
+        const isFirstLoad = !campaignsLoadedRef.current;
+        if (isFirstLoad) {
+          campaignsLoadedRef.current = true;
         }
         setCampaignsError(null);
         try {
@@ -205,6 +388,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             created_at?: string;
             tone?: string;
             leads?: Array<any>;
+            conversation_id?: number;
           }> = [];
           
           if (Array.isArray(data)) {
@@ -231,36 +415,50 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
           
           // Merge new campaigns with existing ones - only add campaigns that don't exist
           // Also update existing campaigns with fresh data if available
+          // AND remove campaigns that were deleted (exist locally but not in API response)
           setCampaigns(prevCampaigns => {
             const existingIds = new Set(prevCampaigns.map(c => c.id));
+            const newItemIds = new Set(newItems.map(item => item.id));
             const campaignsToAdd = newItems.filter(item => !existingIds.has(item.id));
             
             // Update existing campaigns with fresh data (in case status, tone, etc. changed)
-            const updatedCampaigns = prevCampaigns.map(existing => {
-              const freshData = newItems.find(item => item.id === existing.id);
-              if (freshData) {
-                // Merge fresh data with existing, preserving all fields
-                return {
-                  ...existing,
-                  ...freshData,
-                  // Preserve leads if they exist in existing but not in fresh
-                  leads: freshData.leads?.length > 0 ? freshData.leads : existing.leads,
-                };
-              }
-              return existing;
-            });
+            // AND filter out campaigns that were deleted (not in newItems)
+            // AND filter out campaigns that are pending deletion
+            const updatedCampaigns = prevCampaigns
+              .map(existing => {
+                // Skip if pending deletion
+                if (pendingDeletedCampaigns.current.has(existing.id)) {
+                  return null;
+                }
+                
+                const freshData = newItems.find(item => item.id === existing.id);
+                if (freshData) {
+                  // Campaign exists in API - remove from pending deletions
+                  pendingDeletedCampaigns.current.delete(existing.id);
+                  // Merge fresh data with existing, preserving all fields
+                  return {
+                    ...existing,
+                    ...freshData,
+                    // Preserve leads if they exist in existing but not in fresh
+                    leads: freshData.leads?.length > 0 ? freshData.leads : existing.leads,
+                  };
+                }
+                return null; // Mark for removal if not in newItems
+              })
+              .filter((campaign): campaign is NonNullable<typeof campaign> => {
+                // Remove campaigns that don't exist in newItems (were deleted)
+                return campaign !== null && newItemIds.has(campaign.id);
+              });
             
-            // If we have existing campaigns and no new ones to add, return updated existing
-            if (prevCampaigns.length > 0 && campaignsToAdd.length === 0) {
-              const merged = updatedCampaigns;
-              writeCache(CACHE_KEYS.CAMPAIGNS, merged);
-              return merged;
-            }
+            // Also filter out pending deletions from new items
+            const filteredNewItems = campaignsToAdd.filter(item => 
+              !pendingDeletedCampaigns.current.has(item.id)
+            );
             
             // Merge: updated existing + new, or if no existing, use new items
             const merged = prevCampaigns.length > 0 
-              ? [...updatedCampaigns, ...campaignsToAdd]
-              : newItems;
+              ? [...updatedCampaigns, ...filteredNewItems]
+              : newItems.filter(item => !pendingDeletedCampaigns.current.has(item.id));
             
             // Update cache with full data structure
             writeCache(CACHE_KEYS.CAMPAIGNS, merged);
@@ -302,19 +500,29 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     if (activeTab !== 'campaigns') {
       campaignsLoadedRef.current = false;
     }
-  }, [activeTab, campaigns.length]);
+  }, [activeTab]);
 
   // Fetch conversations when conversations tab is active - similar pattern to campaigns
   const conversationsLoadedRef = useRef(false);
+  // Track if we've ever loaded (even if empty) - never reset this
+  const conversationsEverLoadedRef = useRef(false);
   
   useEffect(() => {
-    if (activeTab === 'conversations' && !conversationsLoadedRef.current) {
-      conversationsLoadedRef.current = true;
-      
+    if (activeTab === 'conversations') {
       const fetchConversations = async () => {
-        // Only show loading if we don't have cached conversations
-        if (conversations.length === 0) {
-          setIsLoadingConversations(true);
+        // Only show loading on very first load ever (when we've never loaded before)
+        const isFirstLoadEver = !conversationsEverLoadedRef.current;
+        if (isFirstLoadEver) {
+          conversationsEverLoadedRef.current = true;
+          if (conversations.length === 0) {
+            setIsLoadingConversations(true);
+          }
+        }
+        
+        // Track if this is the first load in this session
+        const isFirstLoad = !conversationsLoadedRef.current;
+        if (isFirstLoad) {
+          conversationsLoadedRef.current = true;
         }
         setConversationsError(null);
         try {
@@ -329,6 +537,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             message_count?: number;
             created_at?: string;
             last_active?: string;
+            has_campaign?: boolean;
           }> = [];
           
           if (Array.isArray(data)) {
@@ -361,33 +570,47 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
           
           // Merge new conversations with existing ones - only add conversations that don't exist
           // Also update existing conversations with fresh data if available
+          // AND remove conversations that were deleted (exist locally but not in API response)
           setConversations(prevConversations => {
             const existingIds = new Set(prevConversations.map(c => c.id));
+            const newItemIds = new Set(newItems.map(item => item.id));
             const conversationsToAdd = newItems.filter(item => !existingIds.has(item.id));
             
             // Update existing conversations with fresh data
-            const updatedConversations = prevConversations.map(existing => {
-              const freshData = newItems.find(item => item.id === existing.id);
-              if (freshData) {
-                return {
-                  ...existing,
-                  ...freshData,
-                };
-              }
-              return existing;
-            });
+            // AND filter out conversations that were deleted (not in newItems)
+            // AND filter out conversations that are pending deletion
+            const updatedConversations = prevConversations
+              .map(existing => {
+                // Skip if pending deletion
+                if (pendingDeletedConversations.current.has(existing.id)) {
+                  return null;
+                }
+                
+                const freshData = newItems.find(item => item.id === existing.id);
+                if (freshData) {
+                  // Conversation exists in API - remove from pending deletions
+                  pendingDeletedConversations.current.delete(existing.id);
+                  return {
+                    ...existing,
+                    ...freshData,
+                  };
+                }
+                return null; // Mark for removal if not in newItems
+              })
+              .filter((conversation): conversation is NonNullable<typeof conversation> => {
+                // Remove conversations that don't exist in newItems (were deleted)
+                return conversation !== null && newItemIds.has(conversation.id);
+              });
             
-            // If we have existing conversations and no new ones to add, return updated existing
-            if (prevConversations.length > 0 && conversationsToAdd.length === 0) {
-              const merged = updatedConversations;
-              writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, merged);
-              return merged;
-            }
+            // Also filter out pending deletions from new items
+            const filteredNewItems = conversationsToAdd.filter(item => 
+              !pendingDeletedConversations.current.has(item.id)
+            );
             
             // Merge: updated existing + new, or if no existing, use new items
             const merged = prevConversations.length > 0 
-              ? [...updatedConversations, ...conversationsToAdd]
-              : newItems;
+              ? [...updatedConversations, ...filteredNewItems]
+              : newItems.filter(item => !pendingDeletedConversations.current.has(item.id));
             
             // Update cache with full data structure
             writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, merged);
@@ -429,7 +652,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     if (activeTab !== 'conversations') {
       conversationsLoadedRef.current = false;
     }
-  }, [activeTab, conversations.length]);
+  }, [activeTab]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -443,8 +666,8 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               setActiveConversationId(id);
               // Refresh sidebar conversations when a new conversation is created
               if (id) {
-                sidebarRef.current?.refreshConversations({ silent: true });
-                sidebarRef.current?.refreshCampaigns({ silent: true });
+                fetchSidebarConversations({ silent: true });
+                fetchSidebarCampaigns({ silent: true });
                 // Fetch credits when new conversation is created
                 fetchUserCredits()
                   .then(data => writeCache(CACHE_KEYS.CREDITS, data))
@@ -644,7 +867,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                   Start building your first campaign to see it appear in this dashboard
                 </p>
                 <Button 
-                  onClick={() => navigate('/campaign-builder')}
+                  onClick={() => navigate('/')}
                   className="bg-gradient-primary shadow-soft hover:shadow-medium transition-smooth"
                   size="lg"
                 >
@@ -846,12 +1069,12 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                           variant="destructive" 
                           size="sm" 
                           className="!shadow-none hover:!shadow-none hover:bg-destructive/80 active:scale-95 transition-all"
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.stopPropagation();
                             const conversationTitle = conversation.title || `Conversation #${conversation.id}`;
                             const hasCampaign = conversation.has_campaign || false;
                             
-                            // Find campaign name from existing campaigns state
+                            // Find campaign name from existing campaigns state or cache (synchronously)
                             let campaignName: string | null = null;
                             if (hasCampaign) {
                               // First check in current campaigns state
@@ -865,47 +1088,13 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                                 }
                               }
                               
-                              // If still not found, fetch campaigns to find the associated one
-                              if (!associatedCampaign) {
-                                try {
-                                  const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
-                                  let allCampaigns: Array<any> = [];
-                                  
-                                  if (Array.isArray(data)) {
-                                    allCampaigns = data;
-                                  } else if (data && Array.isArray((data as any).items)) {
-                                    allCampaigns = (data as any).items;
-                                  }
-                                  
-                                  associatedCampaign = allCampaigns.find((c: any) => c.conversation_id === conversation.id);
-                                  
-                                  // Update campaigns state with fetched data
-                                  if (allCampaigns.length > 0) {
-                                    setCampaigns(prevCampaigns => {
-                                      const existingIds = new Set(prevCampaigns.map(c => c.id));
-                                      const newItems = allCampaigns.map((it: any) => ({
-                                        id: Number(it?.id ?? 0),
-                                        name: it?.name || `Campaign ${it?.id ?? 0}`,
-                                        status: it?.status || 'draft',
-                                        created_at: it?.created_at,
-                                        tone: it?.tone,
-                                        leads: it?.leads || [],
-                                        conversation_id: it?.conversation_id,
-                                      }));
-                                      const campaignsToAdd = newItems.filter(item => !existingIds.has(item.id));
-                                      return [...prevCampaigns, ...campaignsToAdd];
-                                    });
-                                  }
-                                } catch (err) {
-                                  console.error('Failed to fetch campaigns for delete dialog:', err);
-                                }
-                              }
-                              
                               if (associatedCampaign) {
-                                campaignName = associatedCampaign.title || `Campaign ${associatedCampaign.id}`;
+                                // Handle both title and name properties from cache
+                                campaignName = (associatedCampaign as any).title || (associatedCampaign as any).name || `Campaign ${associatedCampaign.id}`;
                               }
                             }
                             
+                            // Open modal immediately with cached data
                             setDeleteConversationDialog({
                               open: true,
                               conversationId: conversation.id,
@@ -1011,6 +1200,9 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                 // Close modal immediately
                 setDeleteCampaignDialog({ open: false, campaignId: null, campaignName: "", conversationTitle: null });
                 
+                // Mark as pending deletion
+                pendingDeletedCampaigns.current.add(campaignId);
+                
                 // Optimistically remove campaign from UI
                 setCampaigns(prevCampaigns => {
                   const updated = prevCampaigns.filter(c => c.id !== campaignId);
@@ -1018,14 +1210,42 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                   return updated;
                 });
                 
-                // Refresh sidebar campaigns
-                sidebarRef.current?.refreshCampaigns({ silent: true });
+                // Also optimistically remove the associated conversation from UI
+                if (campaignToDelete?.conversation_id) {
+                  // Mark as pending deletion
+                  pendingDeletedConversations.current.add(campaignToDelete.conversation_id);
+                  
+                  setConversations(prevConversations => {
+                    const updated = prevConversations.filter(c => c.id !== campaignToDelete.conversation_id);
+                    writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, updated);
+                    return updated;
+                  });
+                }
                 
                 // Perform deletion in background
                 try {
                   await apiClient.delete(`/api/campaigns/${campaignId}`);
+                  
+                  // Remove from pending deletions (API confirmed)
+                  pendingDeletedCampaigns.current.delete(campaignId);
+                  if (campaignToDelete?.conversation_id) {
+                    pendingDeletedConversations.current.delete(campaignToDelete.conversation_id);
+                  }
+                  
+                  // After successful deletion, refresh sidebar to sync with server
+                  fetchSidebarCampaigns({ silent: true });
+                  if (campaignToDelete?.conversation_id) {
+                    fetchSidebarConversations({ silent: true });
+                  }
+                  
                   toast.success(`Campaign "${campaignName}" deleted successfully`);
                 } catch (err: any) {
+                  // Remove from pending deletions (deletion failed)
+                  pendingDeletedCampaigns.current.delete(campaignId);
+                  if (campaignToDelete?.conversation_id) {
+                    pendingDeletedConversations.current.delete(campaignToDelete.conversation_id);
+                  }
+                  
                   // Restore campaign on error
                   if (campaignToDelete) {
                     setCampaigns(prevCampaigns => {
@@ -1033,7 +1253,16 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                       writeCache(CACHE_KEYS.CAMPAIGNS, restored);
                       return restored;
                     });
-                    sidebarRef.current?.refreshCampaigns({ silent: true });
+                    fetchSidebarCampaigns({ silent: true });
+                  }
+                  
+                  // Restore conversation on error
+                  if (campaignToDelete?.conversation_id) {
+                    const associatedConversation = conversations.find(c => c.id === campaignToDelete.conversation_id);
+                    if (!associatedConversation) {
+                      // Need to fetch it back or restore from cache
+                      fetchSidebarConversations({ silent: true });
+                    }
                   }
                   
                   let errorMessage = 'Failed to delete campaign';
@@ -1106,6 +1335,9 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                 // Close modal immediately
                 setDeleteConversationDialog({ open: false, conversationId: null, conversationTitle: "", campaignName: null });
                 
+                // Mark as pending deletion
+                pendingDeletedConversations.current.add(conversationId);
+                
                 // Optimistically remove conversation from UI
                 setConversations(prevConversations => {
                   const updated = prevConversations.filter(c => c.id !== conversationId);
@@ -1113,14 +1345,45 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                   return updated;
                 });
                 
-                // Refresh sidebar conversations
-                sidebarRef.current?.refreshConversations({ silent: true });
+                // Store associated campaign for potential restoration
+                const associatedCampaign = campaigns.find(c => c.conversation_id === conversationId);
+                
+                // Optimistically remove the associated campaign from UI
+                if (associatedCampaign) {
+                  // Mark as pending deletion
+                  pendingDeletedCampaigns.current.add(associatedCampaign.id);
+                  
+                  setCampaigns(prevCampaigns => {
+                    const updated = prevCampaigns.filter(c => c.id !== associatedCampaign.id);
+                    writeCache(CACHE_KEYS.CAMPAIGNS, updated);
+                    return updated;
+                  });
+                }
                 
                 // Perform deletion in background
                 try {
                   await apiClient.delete(`/api/conversations/${conversationId}`);
+                  
+                  // Remove from pending deletions (API confirmed)
+                  pendingDeletedConversations.current.delete(conversationId);
+                  if (associatedCampaign) {
+                    pendingDeletedCampaigns.current.delete(associatedCampaign.id);
+                  }
+                  
+                  // After successful deletion, refresh sidebar to sync with server
+                  sidebarRef.current?.refreshConversations({ silent: true });
+                  if (associatedCampaign) {
+                    sidebarRef.current?.refreshCampaigns({ silent: true });
+                  }
+                  
                   toast.success(`Conversation "${conversationTitle}" deleted successfully`);
                 } catch (err: any) {
+                  // Remove from pending deletions (deletion failed)
+                  pendingDeletedConversations.current.delete(conversationId);
+                  if (associatedCampaign) {
+                    pendingDeletedCampaigns.current.delete(associatedCampaign.id);
+                  }
+                  
                   // Restore conversation on error
                   if (conversationToDelete) {
                     setConversations(prevConversations => {
@@ -1128,7 +1391,17 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                       writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, restored);
                       return restored;
                     });
-                    sidebarRef.current?.refreshConversations({ silent: true });
+                    fetchSidebarConversations({ silent: true });
+                  }
+                  
+                  // Restore campaign on error
+                  if (associatedCampaign) {
+                    setCampaigns(prevCampaigns => {
+                      const restored = [...prevCampaigns, associatedCampaign];
+                      writeCache(CACHE_KEYS.CAMPAIGNS, restored);
+                      return restored;
+                    });
+                    fetchSidebarCampaigns({ silent: true });
                   }
                   
                   let errorMessage = 'Failed to delete conversation';

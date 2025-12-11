@@ -1,4 +1,4 @@
-import { useEffect, useState, useImperativeHandle, forwardRef } from "react";
+import { useState, forwardRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,8 +17,6 @@ import {
   History,
   LogOut
 } from "lucide-react";
-import apiClient, { NetworkError, fetchUserCredits } from "@/lib/api";
-import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
 
 interface SidebarProps {
   activeTab: string;
@@ -27,6 +25,23 @@ interface SidebarProps {
   onCollapsedChange?: (collapsed: boolean) => void;
   onSelectConversation?: (conversationId: number) => void;
   onSelectCampaign?: (campaignId: number) => void;
+  conversations?: Array<{
+    id: number;
+    title?: string | null;
+    last_message?: string | null;
+    updated_at?: string | null;
+    created_at?: string | null;
+  }>;
+  campaigns?: Array<{
+    id: number;
+    title?: string;
+    status?: string;
+    created_at?: string;
+    tone?: string;
+    leads?: Array<any>;
+  }>;
+  isLoadingConversations?: boolean;
+  isLoadingCampaigns?: boolean;
 }
 
 export interface SidebarRef {
@@ -34,44 +49,14 @@ export interface SidebarRef {
   refreshCampaigns: (options?: { silent?: boolean }) => Promise<void>;
 }
 
-type ConversationItem = {
-  id: number;
-  title?: string | null;
-  last_message?: string | null;
-  updated_at?: string | null;
-  created_at?: string | null;
-};
-
-export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }, ref) => {
+export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ 
+  activeTab, 
+  onTabChange, 
+  onLogout, 
+  onCollapsedChange,
+}, ref) => {
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isLoadingChats, setIsLoadingChats] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationItem[]>(() => readCache<ConversationItem[]>(CACHE_KEYS.CONVERSATIONS) || []);
-  const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
-  const [campaignError, setCampaignError] = useState<string | null>(null);
-  const [campaigns, setCampaigns] = useState<Array<{
-    id: number;
-    title?: string;
-    status?: string;
-    created_at?: string;
-    tone?: string;
-    leads?: Array<any>;
-  }>>(
-    () => {
-      const cached = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
-      if (!cached) return [];
-      // Handle both old format (id, title) and new format (full campaign data)
-      return cached.map((item: any) => ({
-        id: item.id,
-        title: item.title || `Campaign ${item.id}`,
-        status: item.status,
-        created_at: item.created_at,
-        tone: item.tone,
-        leads: item.leads || [],
-      }));
-    }
-  );
 
   const handleCollapse = () => {
     const newCollapsed = !isCollapsed;
@@ -87,197 +72,6 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
     // { id: 'campaign-builder', label: 'Campaign Builder', icon: Target, path: '/campaign-builder' },
   ];
-
-  // Function to fetch conversations
-  const fetchConversations = async (options?: { silent?: boolean }) => {
-    const silent = options?.silent === true;
-    if (!silent) setIsLoadingChats(true);
-    setChatError(null);
-    try {
-      const data = await apiClient.get<any>(`/api/conversations/?load_messages=false`);
-      // Normalize possible shapes: array of objects, array of strings, or object with "items"
-      let items: ConversationItem[] = [];
-      if (Array.isArray(data)) {
-        items = data.map((it: any, idx: number) => ({
-          id: Number(it?.id ?? idx + 1),
-          title: it?.title ?? it?.name ?? null,
-          last_message: it?.last_message ?? it?.lastMessage ?? null,
-          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
-          created_at: it?.created_at ?? it?.createdAt ?? null,
-        }));
-      } else if (data && Array.isArray((data as any).items)) {
-        items = (data as any).items.map((it: any, idx: number) => ({
-          id: Number(it?.id ?? idx + 1),
-          title: it?.title ?? it?.name ?? null,
-          last_message: it?.last_message ?? it?.lastMessage ?? null,
-          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
-          created_at: it?.created_at ?? it?.createdAt ?? null,
-        }));
-      } else if (typeof data === 'string') {
-        // Some APIs may return a plain string; treat as a single conversation
-        items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
-      }
-      setConversations(items);
-      writeCache(CACHE_KEYS.CONVERSATIONS, items);
-    } catch (err: any) {
-      let errorMessage = 'Failed to load conversations';
-      
-      if (err instanceof NetworkError) {
-        switch (err.type) {
-          case 'OFFLINE':
-            errorMessage = 'You appear to be offline. Please check your internet connection.';
-            break;
-          case 'NETWORK_ERROR':
-            errorMessage = 'Unable to connect to the server. Please check your connection.';
-            break;
-          case 'TIMEOUT':
-            errorMessage = 'Request timed out. Please try again.';
-            break;
-          case 'SERVER_ERROR':
-            errorMessage = 'Server error occurred. Please try again later.';
-            break;
-          default:
-            errorMessage = err.message || 'Failed to load conversations';
-        }
-      } else {
-        errorMessage = err?.message || 'Failed to load conversations';
-      }
-      
-      setChatError(errorMessage);
-    } finally {
-      if (!silent) setIsLoadingChats(false);
-    }
-  };
-
-  // Function to fetch campaigns
-  const fetchCampaigns = async (options?: { silent?: boolean }) => {
-    const silent = options?.silent === true;
-    if (!silent) setIsLoadingCampaigns(true);
-    setCampaignError(null);
-    try {
-      const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
-      let items: Array<{
-        id: number;
-        title?: string;
-        status?: string;
-        created_at?: string;
-        tone?: string;
-        leads?: Array<any>;
-      }> = [];
-      if (Array.isArray(data)) {
-        items = data.map((it: any, idx: number) => ({
-          id: Number(it?.id ?? idx + 1),
-          title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
-          status: it?.status || 'draft',
-          created_at: it?.created_at,
-          tone: it?.tone,
-          leads: it?.leads || [],
-        }));
-      } else if (data && Array.isArray((data as any).items)) {
-        items = (data as any).items.map((it: any, idx: number) => ({
-          id: Number(it?.id ?? idx + 1),
-          title: it?.title || `Campaign ${it?.id ?? idx + 1}`,
-          status: it?.status || 'draft',
-          created_at: it?.created_at,
-          tone: it?.tone,
-          leads: it?.leads || [],
-        }));
-      } else if (typeof data === 'string') {
-        items = [{ id: 1, title: data }];
-      }
-      setCampaigns(items);
-      writeCache(CACHE_KEYS.CAMPAIGNS, items);
-      
-      // Fetch credits when campaigns are refreshed (campaign creation may have updated credits)
-      fetchUserCredits()
-        .then(data => writeCache(CACHE_KEYS.CREDITS, data))
-        .catch(err => {
-          console.error('Failed to fetch credits after campaign refresh:', err);
-        });
-    } catch (err: any) {
-      let errorMessage = 'Failed to load campaigns';
-      
-      if (err instanceof NetworkError) {
-        switch (err.type) {
-          case 'OFFLINE':
-            errorMessage = 'You appear to be offline. Please check your internet connection.';
-            break;
-          case 'NETWORK_ERROR':
-            errorMessage = 'Unable to connect to the server. Please check your connection.';
-            break;
-          case 'TIMEOUT':
-            errorMessage = 'Request timed out. Please try again.';
-            break;
-          case 'SERVER_ERROR':
-            errorMessage = 'Server error occurred. Please try again later.';
-            break;
-          default:
-            errorMessage = err.message || 'Failed to load campaigns';
-        }
-      } else {
-        errorMessage = err?.message || 'Failed to load campaigns';
-      }
-      
-      setCampaignError(errorMessage);
-    } finally {
-      if (!silent) setIsLoadingCampaigns(false);
-    }
-  };
-
-  // Fetch conversations for the sidebar list
-  useEffect(() => {
-    fetchConversations();
-  }, []);
-
-  // Fetch campaigns for the sidebar list
-  useEffect(() => {
-    fetchCampaigns();
-  }, []);
-
-  // Periodic refresh every 5 minutes
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchConversations({ silent: true });
-      fetchCampaigns({ silent: true });
-    }, 5 * 60 * 1000); // 5 minutes
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Refresh on window focus
-  useEffect(() => {
-    const handleFocus = () => {
-      fetchConversations({ silent: true });
-      fetchCampaigns({ silent: true });
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, []);
-
-  // Listen for cache invalidation events
-  useEffect(() => {
-    const handleCacheInvalidate = (event: Event) => {
-      const customEvent = event as CustomEvent<{ type: 'conversations' | 'campaigns' | 'all' }>;
-      const { type } = customEvent.detail || { type: 'all' };
-      
-      if (type === 'conversations' || type === 'all') {
-        fetchConversations({ silent: true });
-      }
-      if (type === 'campaigns' || type === 'all') {
-        fetchCampaigns({ silent: true });
-      }
-    };
-
-    window.addEventListener('cache-invalidate', handleCacheInvalidate);
-    return () => window.removeEventListener('cache-invalidate', handleCacheInvalidate);
-  }, []);
-
-  // Expose refresh functions to parent component
-  useImperativeHandle(ref, () => ({
-    refreshConversations: (options?: { silent?: boolean }) => fetchConversations(options),
-    refreshCampaigns: (options?: { silent?: boolean }) => fetchCampaigns(options)
-  }), []);
 
   return (
     <Card className={`h-screen bg-gradient-card border-r transition-all duration-300 ${
