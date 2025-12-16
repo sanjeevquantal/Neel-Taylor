@@ -28,9 +28,9 @@ interface DashboardStats {
   personas_change: number;
   conversion_rate: number;
   conversion_rate_change: number;
-  total_opens: number;
-  total_bounces: number;
-  avg_open_rate: number;
+  total_opens?: number;
+  total_bounces?: number;
+  avg_open_rate?: number;
 }
 
 interface RecentCampaign {
@@ -42,9 +42,9 @@ interface RecentCampaign {
   sent_count: number;
   response_count: number;
   persona: string;
-  open_count: number;
-  bounce_count: number;
-  reply_count: number;
+  open_count?: number;
+  bounce_count?: number;
+  reply_count?: number;
 }
 
 interface RecentActivity {
@@ -361,9 +361,9 @@ export const Dashboard = () => {
                     <div className="text-xs text-muted-foreground space-y-1">
                       <div>{campaign.sent_count} sent</div>
                       <div className="flex items-center justify-end gap-3 mt-1">
-                        <span className="text-xs">{campaign.open_count} opens</span>
-                        <span className="text-xs">{campaign.bounce_count} bounces</span>
-                        <span className="text-xs">{campaign.reply_count} replies</span>
+                        <span className="text-xs">{campaign.open_count ?? 0} opens</span>
+                        <span className="text-xs">{campaign.bounce_count ?? 0} bounces</span>
+                        <span className="text-xs">{campaign.reply_count ?? 0} replies</span>
                       </div>
                     </div>
                     {campaign.sent_count > 0 && (
@@ -453,7 +453,7 @@ export const Dashboard = () => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm">Total Opens</span>
                   <span className="text-sm font-medium">
-                    {dashboardData.stats.total_opens.toLocaleString()}
+                    {(dashboardData.stats.total_opens ?? 0).toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -461,7 +461,7 @@ export const Dashboard = () => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm">Total Bounces</span>
                   <span className="text-sm font-medium">
-                    {dashboardData.stats.total_bounces.toLocaleString()}
+                    {(dashboardData.stats.total_bounces ?? 0).toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -469,7 +469,7 @@ export const Dashboard = () => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm">Avg Open Rate</span>
                   <span className="text-sm font-medium">
-                    {dashboardData.stats.avg_open_rate.toFixed(1)}%
+                    {(dashboardData.stats.avg_open_rate ?? 0).toFixed(1)}%
                   </span>
                 </div>
               </div>
