@@ -193,6 +193,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const startNewChat = () => {
     setMessages([]);
     setConversationId(null);
+    setConversationTitle(null);
     setIsInitialTyping(false);
     setConversationHasFile(false); // Reset file upload flag for new chat
     persistMessagesToStorage(null, []);
@@ -201,6 +202,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
   const [messages, setMessages] = useState<Message[]>(() => loadMessagesFromStorage(initialConversationId ?? null));
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId);
+  const [conversationTitle, setConversationTitle] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
@@ -234,6 +236,10 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   // Sync external initial conversation id into local state
   useEffect(() => {
     setConversationId(initialConversationId ?? null);
+    // Reset title when conversation ID changes externally
+    if (!initialConversationId) {
+      setConversationTitle(null);
+    }
   }, [initialConversationId]);
 
   // Load full conversation history when conversationId changes (from sidebar selection)
@@ -244,6 +250,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setIsTyping(false);
       try {
         const data = await apiClient.get<any>(`/api/conversations/${id}`);
+        // Extract conversation title from API response
+        if (data?.title) {
+          setConversationTitle(data.title);
+        } else {
+          setConversationTitle(null);
+        }
+        
         // Normalize possible shapes to Message[]
         // Expect either { messages: [...] } or [...]
         const rawMessages: any[] = Array.isArray(data) ? data : (Array.isArray(data?.messages) ? data.messages : []);
@@ -295,6 +308,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
     if (!conversationId) {
       setMessages(loadMessagesFromStorage(null));
+      setConversationTitle(null);
       setIsLoadingHistory(false);
       return;
     }
@@ -725,7 +739,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               <Sparkles className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold">AI Campaign Creator</h2>
+              <h2 className="text-xl font-semibold">{conversationTitle || 'AI Campaign Creator'}</h2>
               {messages.length === 0 && !isLoadingHistory ? (
                 <p className="text-sm text-muted-foreground">Welcome! Share your company info or upload a document to get started</p>
               ) : (
