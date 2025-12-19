@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiClient, fetchUserCredits } from "@/lib/api";
 import { writeCache, CACHE_KEYS } from "@/lib/cache";
 import { useToast } from "@/components/ui/use-toast";
@@ -97,6 +98,13 @@ const getErrorMessage = (error: any): string => {
   }
 };
 
+// Email validation function
+const validateEmail = (email: string): boolean => {
+  // RFC 5322 compliant email regex (simplified but comprehensive)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
 const Login = ({ onLogin }: LoginProps) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -106,6 +114,18 @@ const Login = ({ onLogin }: LoginProps) => {
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [tab, setTab] = useState<'signin' | 'signup'>("signin");
+  const [emailError, setEmailError] = useState<string>("");
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string>("");
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const forgotPasswordEmailRef = useRef<HTMLInputElement>(null);
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmNewPasswordRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   
   // Refs for focusing fields
@@ -120,6 +140,60 @@ const Login = ({ onLogin }: LoginProps) => {
   useEffect(() => {
     emailRef.current?.focus();
   }, []);
+
+  // Auto-focus on forgot password email field when dialog opens
+  useEffect(() => {
+    if (showForgotPassword && !resetEmailSent) {
+      setTimeout(() => {
+        forgotPasswordEmailRef.current?.focus();
+      }, 100);
+    }
+  }, [showForgotPassword, resetEmailSent]);
+
+  // Password validation function matching backend requirements
+  const validatePassword = (password: string): string => {
+    if (password.length < 8) {
+      return "Password must be at least 8 characters long";
+    }
+    if (!/[A-Z]/.test(password)) {
+      return "Password must contain at least one uppercase letter";
+    }
+    if (!/[a-z]/.test(password)) {
+      return "Password must contain at least one lowercase letter";
+    }
+    if (!/\d/.test(password)) {
+      return "Password must contain at least one digit";
+    }
+    return "";
+  };
+
+  // Handle email change with validation
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSignUpEmail(value);
+    
+    if (emailTouched) {
+      if (!value.trim()) {
+        setEmailError("Email is required");
+      } else if (!validateEmail(value)) {
+        setEmailError("Please enter a valid email address");
+      } else {
+        setEmailError("");
+      }
+    }
+  };
+
+  // Handle email blur
+  const handleEmailBlur = () => {
+    setEmailTouched(true);
+    if (!signUpEmail.trim()) {
+      setEmailError("Email is required");
+    } else if (!validateEmail(signUpEmail)) {
+      setEmailError("Please enter a valid email address");
+    } else {
+      setEmailError("");
+    }
+  };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,7 +299,10 @@ const Login = ({ onLogin }: LoginProps) => {
       return;
     }
     
+    // Validate email
+    setEmailTouched(true);
     if (!signUpEmail.trim()) {
+      setEmailError("Email is required");
       signUpEmailRef.current?.focus();
       toast({
         title: "Email required",
@@ -236,7 +313,8 @@ const Login = ({ onLogin }: LoginProps) => {
       return;
     }
     
-    if (!signUpEmail.includes('@') || !signUpEmail.includes('.')) {
+    if (!validateEmail(signUpEmail)) {
+      setEmailError("Please enter a valid email address");
       signUpEmailRef.current?.focus();
       toast({
         title: "Invalid email",
@@ -246,6 +324,8 @@ const Login = ({ onLogin }: LoginProps) => {
       });
       return;
     }
+    
+    setEmailError("");
     
     if (!signUpPassword.trim()) {
       signUpPasswordRef.current?.focus();
@@ -317,6 +397,8 @@ const Login = ({ onLogin }: LoginProps) => {
       setSignUpPassword("");
       setConfirmPassword("");
       setName("");
+      setEmailError("");
+      setEmailTouched(false);
       
       // Redirect to sign in tab and focus email
       setTab('signin');
@@ -341,6 +423,123 @@ const Login = ({ onLogin }: LoginProps) => {
     onLogin();
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate email
+    if (!forgotPasswordEmail.trim()) {
+      forgotPasswordEmailRef.current?.focus();
+      toast({
+        title: "Email required",
+        description: "Please enter your email address",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    
+    if (!validateEmail(forgotPasswordEmail)) {
+      forgotPasswordEmailRef.current?.focus();
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    // Validate new password
+    if (!newPassword.trim()) {
+      newPasswordRef.current?.focus();
+      toast({
+        title: "Password required",
+        description: "Please enter your new password",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    const passwordValidationError = validatePassword(newPassword);
+    if (passwordValidationError) {
+      setPasswordError(passwordValidationError);
+      newPasswordRef.current?.focus();
+      toast({
+        title: "Invalid password",
+        description: passwordValidationError,
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    // Validate password confirmation
+    if (!confirmNewPassword.trim()) {
+      confirmNewPasswordRef.current?.focus();
+      toast({
+        title: "Password confirmation required",
+        description: "Please confirm your new password",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      confirmNewPasswordRef.current?.focus();
+      toast({
+        title: "Passwords don't match",
+        description: "Please make sure both password fields are the same",
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+
+    setIsSendingReset(true);
+    setPasswordError("");
+    try {
+      // Call the backend forgot password endpoint with email and new_password
+      const response = await apiClient.post<{ message: string; success: boolean }>('/auth/forgot-password', {
+        email: forgotPasswordEmail.trim().toLowerCase(),
+        new_password: newPassword,
+      });
+      
+      setResetEmailSent(true);
+      toast({
+        title: "Password reset successful! ✅",
+        description: response.message || "Your password has been successfully reset. You can now sign in with your new password.",
+        duration: 5000,
+      });
+      
+      // Clear form fields
+      setForgotPasswordEmail("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordError("");
+    } catch (error: any) {
+      const friendlyMessage = getErrorMessage(error);
+      toast({
+        title: "Password reset failed",
+        description: friendlyMessage || "An error occurred while resetting your password. Please try again.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  const handleCloseForgotPassword = () => {
+    setShowForgotPassword(false);
+    setForgotPasswordEmail("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setPasswordError("");
+    setResetEmailSent(false);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-secondary p-4">
       <div className="w-full max-w-md space-y-6">
@@ -352,7 +551,14 @@ const Login = ({ onLogin }: LoginProps) => {
 
         <Card className="bg-gradient-card shadow-medium border-border/20 backdrop-blur-sm">
           <CardHeader className="pb-4">
-            <Tabs value={tab} onValueChange={(v) => setTab(v as 'signin' | 'signup')} className="w-full">
+            <Tabs value={tab} onValueChange={(v) => {
+              setTab(v as 'signin' | 'signup');
+              // Reset email validation state when switching tabs
+              if (v === 'signin') {
+                setEmailError("");
+                setEmailTouched(false);
+              }
+            }} className="w-full">
               <TabsList className="grid w-full grid-cols-2 bg-muted/30">
                 <TabsTrigger 
                   value="signin" 
@@ -392,9 +598,18 @@ const Login = ({ onLogin }: LoginProps) => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="signin-password" className="text-sm font-medium text-foreground">
-                        Password
-                      </Label>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="signin-password" className="text-sm font-medium text-foreground">
+                          Password
+                        </Label>
+                        <button
+                          type="button"
+                          onClick={() => setShowForgotPassword(true)}
+                          className="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
                       <Input
                         ref={passwordRef}
                         id="signin-password"
@@ -493,15 +708,29 @@ const Login = ({ onLogin }: LoginProps) => {
                         type="email"
                         placeholder="Enter your email"
                         value={signUpEmail}
-                        onChange={(e) => setSignUpEmail(e.target.value)}
+                        onChange={handleEmailChange}
+                        onBlur={handleEmailBlur}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             signUpPasswordRef.current?.focus();
                           }
                         }}
-                        className="h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70"
+                        className={`h-11 px-4 bg-background/60 border-border/60 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-smooth placeholder:text-muted-foreground/70 ${
+                          emailError ? 'border-destructive focus:border-destructive focus:ring-destructive/20' : ''
+                        }`}
+                        aria-invalid={emailError ? 'true' : 'false'}
+                        aria-describedby={emailError ? 'signup-email-error' : undefined}
                       />
+                      {emailError && (
+                        <p 
+                          id="signup-email-error"
+                          className="text-sm text-destructive font-medium"
+                          role="alert"
+                        >
+                          {emailError}
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="signup-password" className="text-sm font-medium text-foreground">
@@ -595,6 +824,130 @@ const Login = ({ onLogin }: LoginProps) => {
           </CardHeader>
         </Card>
       </div>
+
+      {/* Forgot Password Dialog */}
+      <Dialog open={showForgotPassword} onOpenChange={(open) => {
+        if (!open) {
+          handleCloseForgotPassword();
+        } else {
+          setShowForgotPassword(true);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              {resetEmailSent 
+                ? "Your password has been successfully reset. You can now sign in with your new password."
+                : "Enter your registered email address and a new password to reset your account password."}
+            </DialogDescription>
+          </DialogHeader>
+          {!resetEmailSent ? (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="forgot-password-email" className="text-sm font-medium">
+                  Email Address
+                </Label>
+                <Input
+                  ref={forgotPasswordEmailRef}
+                  id="forgot-password-email"
+                  type="email"
+                  placeholder="Enter your registered email"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      newPasswordRef.current?.focus();
+                    }
+                  }}
+                  className="h-11"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password" className="text-sm font-medium">
+                  New Password
+                </Label>
+                <Input
+                  ref={newPasswordRef}
+                  id="new-password"
+                  type="password"
+                  placeholder="Enter new password (min. 8 chars, uppercase, lowercase, digit)"
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    if (passwordError) {
+                      setPasswordError("");
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      confirmNewPasswordRef.current?.focus();
+                    }
+                  }}
+                  className={`h-11 ${passwordError ? 'border-destructive focus:border-destructive focus:ring-destructive/20' : ''}`}
+                />
+                {passwordError && (
+                  <p className="text-sm text-destructive font-medium" role="alert">
+                    {passwordError}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Password must be at least 8 characters and include uppercase, lowercase, and a digit.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-new-password" className="text-sm font-medium">
+                  Confirm New Password
+                </Label>
+                <Input
+                  ref={confirmNewPasswordRef}
+                  id="confirm-new-password"
+                  type="password"
+                  placeholder="Re-enter your new password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleForgotPassword(e as any);
+                    }
+                  }}
+                  className="h-11"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseForgotPassword}
+                  disabled={isSendingReset}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSendingReset}
+                  className="bg-gradient-primary hover:opacity-90"
+                >
+                  {isSendingReset ? "Resetting..." : "Reset Password"}
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : (
+            <DialogFooter>
+              <Button
+                onClick={handleCloseForgotPassword}
+                className="w-full bg-gradient-primary hover:opacity-90"
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
