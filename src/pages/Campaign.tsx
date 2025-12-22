@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
 import { Sidebar, SidebarRef } from "@/components/Sidebar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Linkedin, Mail } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { CampaignLoaderData } from "@/lib/loaders";
@@ -40,7 +40,7 @@ const CampaignPage = () => {
         }}
       />
       <main className={`${isSidebarCollapsed ? 'ml-16' : 'ml-64'} transition-all duration-300 overflow-auto min-h-screen p-6`}>
-        <div className="max-w-4xl">
+        <div className="max-w-4xl mx-auto">
           <Suspense fallback={
             <div className="flex flex-col items-center justify-center min-h-[60vh]">
               <LoadingSpinner size="lg" text="Loading campaign..." />
@@ -149,12 +149,38 @@ const CampaignPage = () => {
                         <div>
                           <h4 className="text-lg font-semibold mb-4">Leads ({data.leads.length})</h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {data.leads.map((lead, index) => (
-                              <Card key={lead.id || index} className="p-3 bg-muted/30">
-                                <div className="text-sm font-medium">{lead.name || 'Unnamed Lead'}</div>
-                                <div className="text-xs text-muted-foreground">{lead.email || 'No email'}</div>
-                              </Card>
-                            ))}
+                            {data.leads.map((lead, index) => {
+                              const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed Lead';
+                              return (
+                                <Card key={lead.id || index} className="p-3 bg-muted/30">
+                                  <div className="space-y-2">
+                                    <div className="text-sm font-medium">{fullName}</div>
+                                    {lead.job_title && (
+                                      <div className="text-xs text-muted-foreground">{lead.job_title}</div>
+                                    )}
+                                    {lead.email && (
+                                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <Mail className="w-3 h-3" />
+                                        <span>{lead.email}</span>
+                                      </div>
+                                    )}
+                                    {lead.linkedin_url && (
+                                      <div className="text-xs">
+                                        <a 
+                                          href={lead.linkedin_url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1.5 text-primary hover:underline"
+                                        >
+                                          <Linkedin className="w-3 h-3" />
+                                          <span>LinkedIn Profile</span>
+                                        </a>
+                                      </div>
+                                    )}
+                                  </div>
+                                </Card>
+                              );
+                            })}
                           </div>
                         </div>
                       )}

@@ -8,7 +8,15 @@ export type CampaignLoaderData = {
   status?: string;
   created_at?: string;
   tone?: string;
-  leads?: Array<{ id?: number; email?: string; name?: string }>;
+  leads?: Array<{ 
+    id?: number; 
+    email?: string; 
+    name?: string; // Legacy field, prefer first_name + last_name
+    first_name?: string;
+    last_name?: string;
+    job_title?: string;
+    linkedin_url?: string;
+  }>;
   email_sequence?: {
     sequence_id?: number;
     campaign_id?: number;

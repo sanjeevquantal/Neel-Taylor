@@ -4,10 +4,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { 
   Send, 
   Bot, 
-  User, 
+  User,     
   Sparkles,
   Paperclip,
   X
@@ -15,6 +23,118 @@ import {
 import apiClient, { NetworkError, streamChat, fetchUserCredits } from "@/lib/api";
 import { writeCache, CACHE_KEYS } from "@/lib/cache";
 import { UploadModal } from "@/components/UploadModal";
+
+// Parse metadata from message content
+interface ParsedMetadata {
+  textContent: string;
+  metadata: any | null;
+}
+
+const parseMetadata = (content: string): ParsedMetadata => {
+  // Find the metadata marker (case-insensitive, handles whitespace variations)
+  const metadataMarker = '-%METADATA%-';
+  const markerIndex = content.indexOf(metadataMarker);
+  
+  if (markerIndex === -1) {
+    return { textContent: content, metadata: null };
+  }
+  
+  // Extract text before metadata (remove trailing newlines/whitespace)
+  const textBefore = content.substring(0, markerIndex).trim();
+  
+  // Extract JSON after metadata marker (skip the marker and any whitespace/newlines)
+  const jsonStart = markerIndex + metadataMarker.length;
+  let jsonString = content.substring(jsonStart).trim();
+  
+  // Remove any leading newlines or whitespace
+  jsonString = jsonString.replace(/^\s*\n\s*/, '');
+  
+  if (!jsonString) {
+    return { textContent: content, metadata: null };
+  }
+  
+  try {
+    const metadata = JSON.parse(jsonString);
+    console.log('Parsed metadata successfully:', metadata);
+    return { textContent: textBefore, metadata };
+  } catch (e) {
+    console.error('Failed to parse metadata:', e, 'JSON string:', jsonString.substring(0, 200));
+    // If parsing fails, return original content
+    return { textContent: content, metadata: null };
+  }
+};
+
+// Component to render lead list table
+const LeadListTable = ({ data }: { data: any[] }) => {
+  console.log('LeadListTable rendering with data:', data);
+  
+  if (!Array.isArray(data) || data.length === 0) {
+    console.log('LeadListTable: No data or empty array');
+    return null;
+  }
+
+  // Calculate max height for 5 rows (approximately 48px per row)
+  const maxHeight = '240px'; // ~48px per row * 5 rows
+
+  return (
+    <div className="mt-4 border-2 border-border rounded-lg overflow-hidden bg-card shadow-md">
+      <div className="p-2 bg-muted/50 border-b border-border">
+        <h4 className="text-sm font-semibold">Lead List ({data.length} leads)</h4>
+      </div>
+      <div className="relative overflow-x-auto">
+        <div 
+          className="overflow-y-auto"
+          style={{ maxHeight }}
+        >
+          <Table>
+            <TableHeader className="sticky top-0 bg-muted/50 z-10">
+              <TableRow className="bg-muted/30">
+                <TableHead className="min-w-[150px] font-semibold">Name</TableHead>
+                <TableHead className="min-w-[200px] font-semibold">Title</TableHead>
+                <TableHead className="min-w-[180px] font-semibold">Email</TableHead>
+                <TableHead className="min-w-[120px] font-semibold">LinkedIn</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((lead, index) => (
+                <TableRow key={index} className="hover:bg-muted/20">
+                  <TableCell className="font-medium min-w-[150px]">{lead.name || '-'}</TableCell>
+                  <TableCell className="min-w-[200px]">{lead.title || '-'}</TableCell>
+                  <TableCell className="min-w-[180px]">
+                    {lead.email ? (
+                      <a
+                        href={`mailto:${lead.email}`}
+                        className="text-primary hover:underline text-sm break-all"
+                      >
+                        {lead.email}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
+                  <TableCell className="min-w-[120px]">
+                    {lead.linkedin ? (
+                      <a
+                        href={lead.linkedin}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline text-sm font-medium"
+                      >
+                        View Profile →
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Simple but structured markdown parser for chat messages
 const parseMarkdown = (text: string) => {
@@ -57,7 +177,7 @@ const parseMarkdown = (text: string) => {
     if (h1) {
       closeListsTo(0);
       htmlParts.push(`<h1 class="text-2xl font-bold mt-4 mb-3">${applyInline(h1[1])}</h1>`);
-      continue;
+      continue;4
     }
 
     // List items (support simple nested lists with two-space indent)
@@ -856,7 +976,37 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                   })}
                 </span>
               </div>
-              <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
+              {(() => {
+                const { textContent, metadata } = parseMetadata(message.content);
+                const hasTextContent = textContent && textContent.trim().length > 0;
+                
+                // Debug logging
+                if (message.type === 'assistant') {
+                  if (message.content.includes('-%METADATA%-')) {
+                    console.log('Message contains metadata marker');
+                    console.log('Full content:', message.content);
+                    console.log('Parsed textContent:', textContent);
+                    console.log('Parsed metadata:', metadata);
+                  }
+                }
+                
+                // Check if we have valid metadata to display
+                const hasValidMetadata = metadata && metadata.type === 'lead_list' && Array.isArray(metadata.data) && metadata.data.length > 0;
+                
+                return (
+                  <>
+                    {hasTextContent && (
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(textContent) }} />
+                    )}
+                    {hasValidMetadata && (
+                      <LeadListTable data={metadata.data} />
+                    )}
+                    {!hasTextContent && !hasValidMetadata && (
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
+                    )}
+                  </>
+                );
+              })()}
               {message.hasFile && (
                 <div className="mt-3 pt-3 border-t border-border/30">
                   <div className="flex items-center space-x-2 text-xs text-muted-foreground">
