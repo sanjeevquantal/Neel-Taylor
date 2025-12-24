@@ -3,7 +3,7 @@
 export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
 const getBaseUrl = (): string => {
-  const envUrl = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
   // Fallback to Render backend if not configured
   return envUrl || "http://localhost:8000";
 };
