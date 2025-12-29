@@ -973,7 +973,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                   <Bot className="w- h-4" />
                 )}
               </div>
-              <Card className={`max-w-2xl p-4 shadow-soft ${message.type === 'user'
+              <Card className={`max-w-[85%] sm:max-w-2xl p-4 shadow-soft overflow-hidden break-words rounded-[22px] ${message.type === 'user'
                 ? 'bg-primary/5 border-primary/20'
                 : 'bg-gradient-card'
                 }`}>
@@ -1016,13 +1016,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                   return (
                     <>
                       {hasTextContent && (
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(textContent) }} />
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-hidden" dangerouslySetInnerHTML={{ __html: parseMarkdown(textContent) }} />
                       )}
                       {hasValidMetadata && (
                         <LeadListTable data={metadata.data} />
                       )}
                       {!hasTextContent && !hasValidMetadata && (
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-hidden" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
                       )}
                     </>
                   );
@@ -1125,16 +1125,16 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             </div>
           )}
           <div className="relative">
-            <div className={`flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-1.5 min-h-[44px] ${isTyping ? 'opacity-60' : ''}`}>
+            <div className={`flex items-center bg-muted rounded-[32px] border border-input pl-6 pr-2 py-2 min-h-[56px] ${isTyping ? 'opacity-60' : ''}`}>
               {/* Input field */}
               <Textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isTyping ? "AI is responding, please wait..." : "Ask AI to create a marketing campaign for your company"}
-                className="flex-1 border-0 bg-transparent px-2 py-0 min-h-[1.5rem] max-h-[160px] resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-y-auto"
+                className="flex-1 border-0 bg-transparent px-2 py-1 min-h-[1.5rem] max-h-[160px] resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-y-auto scrollbar-thin"
                 style={{
-                  lineHeight: '1.5rem'
+                  lineHeight: '1rem'
                 }}
                 disabled={isTyping}
                 onKeyDown={(e) => {
@@ -1148,7 +1148,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               />
 
               {/* Right side actions */}
-              <div className="flex items-center space-x-2 ml-3">
+              <div className="flex items-center space-x-2 ml-2">
                 <div
                   className="relative"
                   onMouseEnter={() => setShowPaperclipTooltip(true)}
