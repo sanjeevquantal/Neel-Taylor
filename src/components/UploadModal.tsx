@@ -213,9 +213,23 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
                 placeholder="https://example.com/about"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleLinkSubmit();
+                  }
+                }}
                 className="w-full"
               />
             </div>
+            <Button
+              onClick={handleLinkSubmit}
+              className="w-full"
+              disabled={isLoading || !linkUrl.trim()}
+            >
+              {isLoading ? "Processing..." : "Send Link"}
+              <Send className="w-4 h-4 ml-2" />
+            </Button>
           </div>
         )}
 

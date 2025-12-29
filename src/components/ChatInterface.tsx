@@ -1162,6 +1162,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                     onLinkSelected={(url) => {
                       setAttachedUrl(url);
                       setIsUploadingFile(false);
+                      sendMessage(undefined, undefined, url);
                     }}
                     hasUploadedFile={!!uploadedFile || isUploadingFile || conversationHasFile}
                   >
