@@ -1,16 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
   DialogTitle,
-  DialogTrigger 
+  DialogTrigger
 } from "@/components/ui/dialog";
-import { Upload, Link, FileText } from "lucide-react";
-// No API calls here anymore; the parent will send the file with the chat request
+import { Upload, Link, FileText, Send, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 interface UploadModalProps {
   onFileSelected: (file: File) => void;
@@ -34,16 +34,16 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain'
     ];
-    
+
     const allowedExtensions = ['.pdf', '.docx', '.txt'];
     const fileName = file.name.toLowerCase();
-    
+
     // Check MIME type
     const isValidMimeType = allowedTypes.includes(file.type);
-    
+
     // Check file extension as fallback
     const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-    
+
     return isValidMimeType || hasValidExtension;
   };
 
@@ -53,9 +53,10 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
       if (validateFileType(file)) {
         setSelectedFile(file);
         setError('');
-        // Immediately pass file to parent and close
+        // Return immediately
         onFileSelected(file);
         setIsOpen(false);
+        resetModal();
       } else {
         setError('File type not supported. Please upload only PDF, DOCX, or TXT files.');
         setSelectedFile(null);
@@ -75,7 +76,7 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
     setError('');
 
     try {
-      // Pass URL directly to parent to be sent as multipart field `URL`
+      // Pass URL and message to parent
       onLinkSelected?.(linkUrl.trim());
       setIsOpen(false);
       setLinkUrl('');
@@ -97,6 +98,7 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
+      if (hasUploadedFile && open) return; // Prevent opening if file already uploaded
       setIsOpen(open);
       if (!open) resetModal();
     }}>
@@ -110,12 +112,15 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
             <span>Upload Information</span>
           </DialogTitle>
         </DialogHeader>
-        
+
         <div className="flex space-x-1 mb-4">
           <Button
             variant={activeTab === 'file' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setActiveTab('file')}
+            onClick={() => {
+              setActiveTab('file');
+              setError('');
+            }}
             className="flex-1"
           >
             <FileText className="w-4 h-4 mr-2" />
@@ -124,7 +129,10 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
           <Button
             variant={activeTab === 'link' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setActiveTab('link')}
+            onClick={() => {
+              setActiveTab('link');
+              setError('');
+            }}
             className="flex-1"
           >
             <Link className="w-4 h-4 mr-2" />
@@ -138,7 +146,7 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
               <Label htmlFor="file-upload">Select Document</Label>
               {hasUploadedFile ? (
                 <div className="relative">
-                  <div 
+                  <div
                     className="border-2 border-dashed border-border rounded-lg p-6 text-center opacity-50 cursor-not-allowed"
                     onMouseEnter={() => setShowTooltip(true)}
                     onMouseLeave={() => setShowTooltip(false)}
@@ -189,9 +197,10 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
                 </div>
               )}
             </div>
-            
-            {selectedFile && (
-              <div className="text-sm text-muted-foreground">{selectedFile.name} selected</div>
+            {selectedFile && !hasUploadedFile && (
+              <div className="text-xs text-muted-foreground mt-1">
+                File ready: <span className="font-medium">{selectedFile.name}</span>
+              </div>
             )}
           </div>
         ) : (
@@ -207,20 +216,20 @@ export const UploadModal = ({ onFileSelected, onLinkSelected, children, hasUploa
                 className="w-full"
               />
             </div>
-            
-            <Button 
-              onClick={handleLinkSubmit} 
-              disabled={!linkUrl.trim() || isLoading}
-              className="w-full"
-            >
-              {isLoading ? 'Fetching...' : 'Fetch Content'}
-            </Button>
           </div>
         )}
 
         {error && (
-          <div className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">
-            {error}
+          <div className="text-sm text-red-500 bg-red-50 p-3 rounded-lg flex items-start justify-between">
+            <span className="flex-1">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError('')}
+              className="ml-2 text-red-400 hover:text-red-700 transition-colors shrink-0"
+              aria-label="Clear error"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
       </DialogContent>

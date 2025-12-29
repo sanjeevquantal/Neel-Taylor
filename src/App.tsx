@@ -12,7 +12,7 @@ import { PageLoadingSpinner } from "@/components/LoadingSpinner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { campaignLoader } from "./lib/loaders";
 import { isTokenExpired } from "./lib/api";
-import { clearSidebarCaches } from "./lib/cache";
+import { clearSidebarCaches, clearAllCaches } from "./lib/cache";
 
 const queryClient = new QueryClient();
 
@@ -30,12 +30,12 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const savedAuth = localStorage.getItem('campaigner-auth');
       const authToken = localStorage.getItem('auth_token');
-      
+
       // If no auth flag or no token, not authenticated
       if (savedAuth !== 'true' || !authToken) {
         return false;
       }
-      
+
       // Check if token is expired
       if (isTokenExpired(authToken)) {
         // Clear expired authentication data
@@ -43,7 +43,7 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         localStorage.removeItem('auth_token');
         return false;
       }
-      
+
       return true;
     } catch (error) {
       console.error('Error loading authentication state:', error);
@@ -55,6 +55,11 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Listen for auth expiration events from API calls
   useEffect(() => {
     const handleAuthExpired = () => {
+      try {
+        clearAllCaches();
+      } catch (error) {
+        console.error('Error clearing data on expiration:', error);
+      }
       setIsAuthenticated(false);
       setIsFreshLogin(false);
     };
@@ -81,14 +86,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const handleLogout = () => {
     try {
-      localStorage.removeItem('campaigner-auth');
-      localStorage.removeItem('campaigner-chat');
-      localStorage.removeItem('neel-taylor-conversation-history');
-      localStorage.removeItem('campaigner-chat-display');
-      // Also remove auth token
-      localStorage.removeItem('auth_token');
-      // Clear sidebar caches to prevent data leakage between users
-      clearSidebarCaches();
+      // Use the new comprehensive cache clearing utility
+      clearAllCaches();
     } catch (error) {
       console.error('Error clearing authentication data:', error);
     }
@@ -115,11 +114,11 @@ const useAuth = () => {
 // Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, handleLogin, handleLogout, isFreshLogin } = useAuth();
-  
+
   if (!isAuthenticated) {
     return <Login onLogin={handleLogin} />;
   }
-  
+
   return <>{children}</>;
 };
 

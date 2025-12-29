@@ -12,10 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { 
-  Send, 
-  Bot, 
-  User,     
+import {
+  Send,
+  Bot,
+  User,
   Sparkles,
   Paperclip,
   X
@@ -34,25 +34,25 @@ const parseMetadata = (content: string): ParsedMetadata => {
   // Find the metadata marker (case-insensitive, handles whitespace variations)
   const metadataMarker = '-%METADATA%-';
   const markerIndex = content.indexOf(metadataMarker);
-  
+
   if (markerIndex === -1) {
     return { textContent: content, metadata: null };
   }
-  
+
   // Extract text before metadata (remove trailing newlines/whitespace)
   const textBefore = content.substring(0, markerIndex).trim();
-  
+
   // Extract JSON after metadata marker (skip the marker and any whitespace/newlines)
   const jsonStart = markerIndex + metadataMarker.length;
   let jsonString = content.substring(jsonStart).trim();
-  
+
   // Remove any leading newlines or whitespace
   jsonString = jsonString.replace(/^\s*\n\s*/, '');
-  
+
   if (!jsonString) {
     return { textContent: content, metadata: null };
   }
-  
+
   try {
     const metadata = JSON.parse(jsonString);
     console.log('Parsed metadata successfully:', metadata);
@@ -67,7 +67,7 @@ const parseMetadata = (content: string): ParsedMetadata => {
 // Component to render lead list table
 const LeadListTable = ({ data }: { data: any[] }) => {
   console.log('LeadListTable rendering with data:', data);
-  
+
   if (!Array.isArray(data) || data.length === 0) {
     console.log('LeadListTable: No data or empty array');
     return null;
@@ -82,7 +82,7 @@ const LeadListTable = ({ data }: { data: any[] }) => {
         <h4 className="text-sm font-semibold">Lead List ({data.length} leads)</h4>
       </div>
       <div className="relative overflow-x-auto">
-        <div 
+        <div
           className="overflow-y-auto"
           style={{ maxHeight }}
         >
@@ -177,7 +177,7 @@ const parseMarkdown = (text: string) => {
     if (h1) {
       closeListsTo(0);
       htmlParts.push(`<h1 class="text-2xl font-bold mt-4 mb-3">${applyInline(h1[1])}</h1>`);
-      continue;4
+      continue;
     }
 
     // List items (support simple nested lists with two-space indent)
@@ -307,7 +307,7 @@ const migrateDraftToConversationStorage = (newConversationId: number) => {
 };
 
 export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange, onNewChat }: ChatInterfaceProps) => {
- 
+
 
   // Function to start a new chat
   const startNewChat = () => {
@@ -336,7 +336,18 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const skipNextHistoryLoadRef = useRef(false);
+
+  // Auto-adjust textarea height
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      // capped at 160px, min height handled by CSS
+      textareaRef.current.style.height = `${Math.min(scrollHeight, 160)}px`;
+    }
+  }, [input]);
 
   // Scroll to bottom on new messages or typing changes
   useEffect(() => {
@@ -376,7 +387,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         } else {
           setConversationTitle(null);
         }
-        
+
         // Normalize possible shapes to Message[]
         // Expect either { messages: [...] } or [...]
         const rawMessages: any[] = Array.isArray(data) ? data : (Array.isArray(data?.messages) ? data.messages : []);
@@ -388,30 +399,30 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           hasFile: m?.has_file || m?.hasFile || false, // Check if backend stores this info
         }));
         setMessages(mapped);
-        
+
         // Check if this conversation has had any file uploads
         // Look for hasFile property first, then fallback to content patterns
         const hasFileContent = mapped.some(msg => {
           // First check if the message has the hasFile property
           if (msg.hasFile) return true;
-          
+
           // Fallback to content pattern detection
           const content = msg.content.toLowerCase();
-          return content.includes('file_content') || 
-                 content.includes('uploaded file') ||
-                 content.includes('file uploaded') ||
-                 content.includes('analyze the uploaded') ||
-                 content.includes('based on its content') ||
-                 content.includes('document you') ||
-                 content.includes('file you') ||
-                 (msg.type === 'user' && (
-                   content.includes('analyze') && content.includes('file') ||
-                   content.includes('upload') && content.includes('document')
-                 )) ||
-                 (msg.type === 'assistant' && (
-                   content.includes('file') && content.includes('uploaded') ||
-                   content.includes('document') && content.includes('content')
-                 ));
+          return content.includes('file_content') ||
+            content.includes('uploaded file') ||
+            content.includes('file uploaded') ||
+            content.includes('analyze the uploaded') ||
+            content.includes('based on its content') ||
+            content.includes('document you') ||
+            content.includes('file you') ||
+            (msg.type === 'user' && (
+              content.includes('analyze') && content.includes('file') ||
+              content.includes('upload') && content.includes('document')
+            )) ||
+            (msg.type === 'assistant' && (
+              content.includes('file') && content.includes('uploaded') ||
+              content.includes('document') && content.includes('content')
+            ));
         });
         // console.log('Checking conversation for file uploads:', { hasFileContent, messageCount: mapped.length, messages: mapped.map(m => ({ type: m.type, hasFile: m.hasFile, content: m.content.substring(0, 50) })) });
         if (typeof (data as any)?.knowledge_base_uploaded === 'boolean') {
@@ -508,7 +519,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           if (!hasReceivedFirstChunk) {
             hasReceivedFirstChunk = true;
             setIsTyping(false);
-            
+
             // Add the assistant message with the first chunk
             const aiResponse: Message = {
               id: assistantMessageId,
@@ -519,8 +530,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             setMessages(prev => [...prev, aiResponse]);
           } else {
             // Update the assistant message content as subsequent chunks arrive
-            setMessages(prev => prev.map(msg => 
-              msg.id === assistantMessageId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
                 ? { ...msg, content: msg.content + chunk }
                 : msg
             ));
@@ -530,17 +541,17 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           // If no chunks were received, create the message now with full content
           if (!hasReceivedFirstChunk) {
             setIsTyping(false);
-      const aiResponse: Message = {
+            const aiResponse: Message = {
               id: assistantMessageId,
-        type: 'assistant',
+              type: 'assistant',
               content: fullContent || 'No response generated.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, aiResponse]);
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
           } else {
             // Final update with complete content
-            setMessages(prev => prev.map(msg => 
-              msg.id === assistantMessageId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
                 ? { ...msg, content: fullContent }
                 : msg
             ));
@@ -558,9 +569,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         onError: (error: Error) => {
           console.error('Streaming error:', error);
           setIsTyping(false);
-          
+
           let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
-          
+
           if (error instanceof NetworkError) {
             switch (error.type) {
               case 'OFFLINE':
@@ -579,7 +590,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                 errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
             }
           }
-          
+
           // Add or update the message with error content
           if (!hasReceivedFirstChunk) {
             const errorResponse: Message = {
@@ -590,13 +601,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             };
             setMessages(prev => [...prev, errorResponse]);
           } else {
-            setMessages(prev => prev.map(msg => 
-              msg.id === assistantMessageId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
                 ? { ...msg, content: errorMessage }
                 : msg
             ));
+          }
         }
-      }
       });
 
       streamedConversationId = streamResult?.conversationId;
@@ -607,9 +618,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     } catch (error) {
       console.error('Error calling streaming API:', error);
       setIsTyping(false);
-      
+
       let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
-      
+
       if (error instanceof NetworkError) {
         switch (error.type) {
           case 'OFFLINE':
@@ -628,19 +639,19 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
         }
       }
-      
+
       // Add or update the message with error content
       if (!hasReceivedFirstChunk) {
-      const errorResponse: Message = {
+        const errorResponse: Message = {
           id: assistantMessageId,
-        type: 'assistant',
-        content: errorMessage,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorResponse]);
+          type: 'assistant',
+          content: errorMessage,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, errorResponse]);
       } else {
-        setMessages(prev => prev.map(msg => 
-          msg.id === assistantMessageId 
+        setMessages(prev => prev.map(msg =>
+          msg.id === assistantMessageId
             ? { ...msg, content: errorMessage }
             : msg
         ));
@@ -650,43 +661,55 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     }
   };
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
+  const sendMessage = async (overrideContent?: string, overrideFile?: File, overrideUrl?: string) => {
+    const finalContent = overrideContent !== undefined ? overrideContent : input;
+    const finalFile = overrideFile !== undefined ? overrideFile : uploadedFile;
+    const finalUrl = overrideUrl !== undefined ? overrideUrl : attachedUrl;
+
+    if (!finalContent.trim() && !finalFile && !finalUrl) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
-      content: input,
+      content: finalContent || (finalFile ? `Uploaded file: ${finalFile.name}` : `Attached URL: ${finalUrl}`),
       timestamp: new Date(),
       persona: selectedPersona,
-      hasFile: !!uploadedFile
+      hasFile: !!finalFile
     };
 
-    const userInput = input;
     setMessages(prev => [...prev, userMessage]);
+
+    // Clear states
     setInput('');
-    // console.log('Clearing uploaded file before sending');
-    setUploadedFile(null); // Clear file immediately when sending
-    if (uploadedFile) {
-      setConversationHasFile(true); // Mark conversation as having had a file
+    setUploadedFile(null);
+    setAttachedUrl('');
+
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    if (finalFile) {
+      setConversationHasFile(true);
     }
     setIsTyping(true);
 
     // Create assistant message ID but don't add it to messages yet
     const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessageIdRef = assistantMessageId; // for stable reference
+
     let hasReceivedFirstChunk = false;
     let streamedConversationId: number | undefined;
 
     try {
       const formData = new FormData();
-      formData.append('query', userInput);
+      formData.append('query', finalContent || "Please analyze the attached information.");
       formData.append('conversation_id', String(conversationId || 0));
-      if (attachedUrl) {
-        formData.append('URL', attachedUrl);
-        formData.append('conversation_id', String(conversationId || 0));
+      if (finalUrl) {
+        formData.append('URL', finalUrl);
       }
-      if (uploadedFile) {
-        formData.append('file', uploadedFile);
+      if (finalFile) {
+        formData.append('file', finalFile);
       }
 
       // Track if this was a new conversation
@@ -699,7 +722,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           if (!hasReceivedFirstChunk) {
             hasReceivedFirstChunk = true;
             setIsTyping(false);
-            
+
             // Add the assistant message with the first chunk
             const aiResponse: Message = {
               id: assistantMessageId,
@@ -710,8 +733,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             setMessages(prev => [...prev, aiResponse]);
           } else {
             // Update the assistant message content as subsequent chunks arrive
-            setMessages(prev => prev.map(msg => 
-              msg.id === assistantMessageId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
                 ? { ...msg, content: msg.content + chunk }
                 : msg
             ));
@@ -721,25 +744,25 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           // If no chunks were received, create the message now with full content
           if (!hasReceivedFirstChunk) {
             setIsTyping(false);
-      const aiResponse: Message = {
+            const aiResponse: Message = {
               id: assistantMessageId,
-        type: 'assistant',
+              type: 'assistant',
               content: fullContent || 'No response generated.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, aiResponse]);
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
           } else {
             // Final update with complete content
-            setMessages(prev => prev.map(msg => 
-              msg.id === assistantMessageId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
                 ? { ...msg, content: fullContent }
                 : msg
             ));
           }
 
           if (attachedUrl) {
-          setAttachedUrl('');
-          setIsUploadingFile(false);
+            setAttachedUrl('');
+            setIsUploadingFile(false);
             setConversationHasFile(true);
           }
 
@@ -755,9 +778,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         onError: (error: Error) => {
           console.error('Streaming error:', error);
           setIsTyping(false);
-          
+
           let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
-          
+
           if (error instanceof NetworkError) {
             switch (error.type) {
               case 'OFFLINE':
@@ -776,7 +799,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                 errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
             }
           }
-          
+
           // Add or update the message with error content
           if (!hasReceivedFirstChunk) {
             const errorResponse: Message = {
@@ -787,8 +810,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             };
             setMessages(prev => [...prev, errorResponse]);
           } else {
-            setMessages(prev => prev.map(msg => 
-              msg.id === assistantMessageId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
                 ? { ...msg, content: errorMessage }
                 : msg
             ));
@@ -801,7 +824,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       if (wasNewConversation) {
         await syncConversationContext(streamedConversationId);
       }
-      
+
       if (attachedUrl) {
         setAttachedUrl('');
         setIsUploadingFile(false);
@@ -809,9 +832,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       }
     } catch (error) {
       console.error('Error calling streaming API:', error);
-      
+
       let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
-      
+
       if (error instanceof NetworkError) {
         switch (error.type) {
           case 'OFFLINE':
@@ -830,10 +853,10 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
         }
       }
-      
+
       // Update the message with error content
-      setMessages(prev => prev.map(msg => 
-        msg.id === assistantMessageId 
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMessageId
           ? { ...msg, content: errorMessage }
           : msg
       ));
@@ -876,167 +899,164 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
       {/* Messages - with bottom padding for fixed input; centered like ChatGPT */}
       <div ref={listRef} className="flex-1 overflow-y-auto p-4 pb-32">
-        <div className="max-w-2xl mx-auto space-y-4">
-        {/* Empty state when there are no messages */}
-        {messages.length === 0 && !isLoadingHistory && !isInitialTyping && !isTyping && (
-          <div className="flex flex-col items-center justify-center text-center py-16 px-6 select-none">
-            <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center shadow-glow mb-4">
-              <Sparkles className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-2">Welcome to CampAIgn AI</h3>
-            <p className="text-muted-foreground max-w-xl mb-6">
-              Share your company information (About page link) or upload a brief document. Then ask the AI to create a marketing campaign, email sequence, or outreach copy tailored to your brand.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-              <Button variant="outline" onClick={() => setInput("Create a cold email introducing our product to CTOs at SaaS startups")}>Try: Cold email for CTOs</Button>
-              <Button variant="outline" onClick={() => setInput("Draft a 4-step nurture sequence for trial users of our SaaS")}>Try: Nurture sequence</Button>
-              <Button variant="outline" onClick={() => setInput("Summarize the key value props from our website and craft a LinkedIn outreach message")}>Try: LinkedIn outreach</Button>
-              <Button variant="outline" onClick={() => setInput("Generate a launch announcement email for our new feature with CTA")}>Try: Feature launch email</Button>
-            </div>
-          </div>
-        )}
-        {/* Initial typing animation */}
-        {isInitialTyping && (
-          <div className="flex items-start space-x-3">
-            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
-              <Bot className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <Card className="p-4 shadow-soft bg-gradient-card">
-              <div className="flex items-center space-x-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                </div>
-                <span className="text-sm text-muted-foreground">CampAIgn AI is thinking...</span>
+        <div className="max-w-3xl mx-auto space-y-4">
+          {/* Empty state when there are no messages */}
+          {messages.length === 0 && !isLoadingHistory && !isInitialTyping && !isTyping && (
+            <div className="flex flex-col items-center justify-center text-center py-16 px-6 select-none">
+              <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center shadow-glow mb-4">
+                <Sparkles className="w-6 h-6 text-primary-foreground" />
               </div>
-            </Card>
-          </div>
-        )}
-
-        {/* Loading conversation history */}
-        {isLoadingHistory && messages.length === 0 && (
-          <div className="flex items-start space-x-3">
-            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
-              <Bot className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <Card className="p-4 shadow-soft bg-gradient-card">
-              <div className="flex items-center space-x-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                </div>
-                <span className="text-sm text-muted-foreground">Loading conversation...</span>
+              <h3 className="text-2xl font-semibold mb-2">Welcome to CampAIgn AI</h3>
+              <p className="text-muted-foreground max-w-xl mb-6">
+                Share your company information (About page link) or upload a brief document. Then ask the AI to create a marketing campaign, email sequence, or outreach copy tailored to your brand.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                <Button variant="outline" onClick={() => setInput("Create a cold email introducing our product to CTOs at SaaS startups")}>Try: Cold email for CTOs</Button>
+                <Button variant="outline" onClick={() => setInput("Draft a 4-step nurture sequence for trial users of our SaaS")}>Try: Nurture sequence</Button>
+                <Button variant="outline" onClick={() => setInput("Summarize the key value props from our website and craft a LinkedIn outreach message")}>Try: LinkedIn outreach</Button>
+                <Button variant="outline" onClick={() => setInput("Generate a launch announcement email for our new feature with CTA")}>Try: Feature launch email</Button>
               </div>
-            </Card>
-          </div>
-        )}
-
-
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex items-start space-x-3 ${
-              message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-            }`}
-          >
-            <div className={`aspect-square h-8 rounded-lg flex items-center justify-center ${
-              message.type === 'user' 
-                ? 'bg-primary text-primary-foreground' 
-                : 'bg-gradient-primary text-primary-foreground shadow-glow'
-            }`}>
-              {message.type === 'user' ? (
-                <User className="w-4 h-4" />
-              ) : (
-                <Bot className="w- h-4" />
-              )}
             </div>
-            <Card className={`max-w-2xl p-4 shadow-soft ${
-              message.type === 'user' 
-                ? 'bg-primary/5 border-primary/20' 
-                : 'bg-gradient-card'
-            }`}>
-              <div className="flex items-center justify-between mb-2">
+          )}
+          {/* Initial typing animation */}
+          {isInitialTyping && (
+            <div className="flex items-start space-x-3">
+              <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                <Bot className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <Card className="p-4 shadow-soft bg-gradient-card">
                 <div className="flex items-center space-x-2">
-                  <span className="font-medium">
-                    {message.type === 'user' ? 'You' : 'CampAIgn AI'}
-                  </span>
-                  {message.type === 'assistant' && message.persona && (
-                    <Badge variant="secondary" className="text-xs">
-                      {personas.find(p => p.id === message.persona)?.label}
-                    </Badge>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground ml-4">
-                  {message.timestamp.toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    hour12: true
-                  })}
-                </span>
-              </div>
-              {(() => {
-                const { textContent, metadata } = parseMetadata(message.content);
-                const hasTextContent = textContent && textContent.trim().length > 0;
-                
-                // Debug logging
-                if (message.type === 'assistant') {
-                  if (message.content.includes('-%METADATA%-')) {
-                    console.log('Message contains metadata marker');
-                    console.log('Full content:', message.content);
-                    console.log('Parsed textContent:', textContent);
-                    console.log('Parsed metadata:', metadata);
-                  }
-                }
-                
-                // Check if we have valid metadata to display
-                const hasValidMetadata = metadata && metadata.type === 'lead_list' && Array.isArray(metadata.data) && metadata.data.length > 0;
-                
-                return (
-                  <>
-                    {hasTextContent && (
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(textContent) }} />
-                    )}
-                    {hasValidMetadata && (
-                      <LeadListTable data={metadata.data} />
-                    )}
-                    {!hasTextContent && !hasValidMetadata && (
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
-                    )}
-                  </>
-                );
-              })()}
-              {message.hasFile && (
-                <div className="mt-3 pt-3 border-t border-border/30">
-                  <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                    <Paperclip className="w-3 h-3" />
-                    <span>File attached</span>
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
                   </div>
+                  <span className="text-sm text-muted-foreground">CampAIgn AI is thinking...</span>
                 </div>
-              )}
-            </Card>
-          </div>
-        ))}
-
-        {isTyping && (
-          <div className="flex items-start space-x-3">
-            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
-              <Bot className="w-4 h-4 text-primary-foreground" />
+              </Card>
             </div>
-            <Card className="p-4 shadow-soft bg-gradient-card">
-              <div className="flex items-center space-x-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                </div>
-                <span className="text-sm text-muted-foreground">CampAIgn AI is typing…</span>
+          )}
+
+          {/* Loading conversation history */}
+          {isLoadingHistory && messages.length === 0 && (
+            <div className="flex items-start space-x-3">
+              <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                <Bot className="w-4 h-4 text-primary-foreground" />
               </div>
-            </Card>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+              <Card className="p-4 shadow-soft bg-gradient-card">
+                <div className="flex items-center space-x-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">Loading conversation...</span>
+                </div>
+              </Card>
+            </div>
+          )}
+
+
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex items-start space-x-3 ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+                }`}
+            >
+              <div className={`aspect-square h-8 rounded-lg flex items-center justify-center ${message.type === 'user'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-gradient-primary text-primary-foreground shadow-glow'
+                }`}>
+                {message.type === 'user' ? (
+                  <User className="w-4 h-4" />
+                ) : (
+                  <Bot className="w- h-4" />
+                )}
+              </div>
+              <Card className={`max-w-2xl p-4 shadow-soft ${message.type === 'user'
+                ? 'bg-primary/5 border-primary/20'
+                : 'bg-gradient-card'
+                }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium">
+                      {message.type === 'user' ? 'You' : 'CampAIgn AI'}
+                    </span>
+                    {message.type === 'assistant' && message.persona && (
+                      <Badge variant="secondary" className="text-xs">
+                        {personas.find(p => p.id === message.persona)?.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-4">
+                    {message.timestamp.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </span>
+                </div>
+                {(() => {
+                  const { textContent, metadata } = parseMetadata(message.content);
+                  const hasTextContent = textContent && textContent.trim().length > 0;
+
+                  // Debug logging
+                  if (message.type === 'assistant') {
+                    if (message.content.includes('-%METADATA%-')) {
+                      console.log('Message contains metadata marker');
+                      console.log('Full content:', message.content);
+                      console.log('Parsed textContent:', textContent);
+                      console.log('Parsed metadata:', metadata);
+                    }
+                  }
+
+                  // Check if we have valid metadata to display
+                  const hasValidMetadata = metadata && metadata.type === 'lead_list' && Array.isArray(metadata.data) && metadata.data.length > 0;
+
+                  return (
+                    <>
+                      {hasTextContent && (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(textContent) }} />
+                      )}
+                      {hasValidMetadata && (
+                        <LeadListTable data={metadata.data} />
+                      )}
+                      {!hasTextContent && !hasValidMetadata && (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
+                      )}
+                    </>
+                  );
+                })()}
+                {message.hasFile && (
+                  <div className="mt-3 pt-3 border-t border-border/30">
+                    <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                      <Paperclip className="w-3 h-3" />
+                      <span>File attached</span>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+          ))}
+
+          {isTyping && (
+            <div className="flex items-start space-x-3">
+              <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                <Bot className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <Card className="p-4 shadow-soft bg-gradient-card">
+                <div className="flex items-center space-x-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">CampAIgn AI is typing…</span>
+                </div>
+              </Card>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -1048,8 +1068,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             <div key={`file-${uploadedFile.name}`} className="mb-3 p-3 bg-muted rounded-lg border border-input">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-red-500 rounded flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">PDF</span>
+                  <div className={`w-8 h-8 rounded flex items-center justify-center ${uploadedFile.name.toLowerCase().endsWith('.pdf') ? 'bg-red-500' :
+                    uploadedFile.name.toLowerCase().endsWith('.docx') ? 'bg-blue-600' :
+                      'bg-slate-500'
+                    }`}>
+                    <span className="text-white text-[10px] font-bold uppercase">
+                      {uploadedFile.name.split('.').pop()}
+                    </span>
                   </div>
                   <div>
                     <p className="text-sm font-medium truncate max-w-xs">
@@ -1100,24 +1125,18 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             </div>
           )}
           <div className="relative">
-            <div className={`flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20 ${isTyping ? 'opacity-60' : ''}`}>
+            <div className={`flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-1.5 min-h-[44px] ${isTyping ? 'opacity-60' : ''}`}>
               {/* Input field */}
               <Textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isTyping ? "AI is responding, please wait..." : "Ask AI to create a marketing campaign for your company"}
-                className="flex-1 border-0 bg-transparent px-2 py-0 min-h-6 max-h-16 resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-hidden"
-                style={{ 
-                  height: '1.5rem',
+                className="flex-1 border-0 bg-transparent px-2 py-0 min-h-[1.5rem] max-h-[160px] resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-y-auto"
+                style={{
                   lineHeight: '1.5rem'
                 }}
                 disabled={isTyping}
-                onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = '1.5rem';
-                  const newHeight = Math.min(target.scrollHeight, 64); // 64px = 4 lines
-                  target.style.height = newHeight + 'px';
-                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -1127,21 +1146,27 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                   }
                 }}
               />
-              
+
               {/* Right side actions */}
               <div className="flex items-center space-x-2 ml-3">
-                <div 
+                <div
                   className="relative"
                   onMouseEnter={() => setShowPaperclipTooltip(true)}
                   onMouseLeave={() => setShowPaperclipTooltip(false)}
                 >
-                  <UploadModal 
-                    onFileSelected={(file) => { setIsUploadingFile(true); handleFileSelected(file); }}
-                    onLinkSelected={(url) => { setAttachedUrl(url); setIsUploadingFile(false); }}
+                  <UploadModal
+                    onFileSelected={(file) => {
+                      setUploadedFile(file);
+                      setIsUploadingFile(false);
+                    }}
+                    onLinkSelected={(url) => {
+                      setAttachedUrl(url);
+                      setIsUploadingFile(false);
+                    }}
                     hasUploadedFile={!!uploadedFile || isUploadingFile || conversationHasFile}
                   >
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0 hover:bg-muted-foreground/10"
                       disabled={isTyping || isUploadingFile || !!uploadedFile || conversationHasFile}
@@ -1154,22 +1179,24 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                       {isTyping
                         ? "Please wait for AI to finish responding"
                         : conversationHasFile
-                        ? "A knowledge base is already attached to this conversation"
-                        : (isUploadingFile || uploadedFile)
-                        ? "Uploading..."
-                        : "Upload file or link"}
+                          ? "A knowledge base is already attached to this conversation"
+                          : isUploadingFile
+                            ? "Uploading..."
+                            : uploadedFile
+                              ? "File ready to send"
+                              : "Upload file or link"}
                       <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-popover"></div>
                     </div>
                   )}
                 </div>
 
-                <Button 
-                  variant="default" 
+                <Button
+                  variant="default"
                   size="sm"
                   className="h-8 px-3 rounded-full"
                   title={isTyping ? "AI is responding, please wait..." : "Send message"}
-                  onClick={sendMessage}
-                  disabled={!input.trim() || isTyping}
+                  onClick={() => sendMessage()}
+                  disabled={(!input.trim() && !uploadedFile && !attachedUrl) || isTyping}
                 >
                   <Send className="w-4 h-4" />
                 </Button>

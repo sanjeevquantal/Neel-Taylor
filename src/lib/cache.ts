@@ -23,7 +23,7 @@ export const getUserId = (): number => {
         return userId;
       }
     }
-    
+
     // Try to extract from JWT token
     const token = localStorage.getItem('auth_token');
     if (token) {
@@ -42,7 +42,7 @@ export const getUserId = (): number => {
         // Ignore token parsing errors
       }
     }
-    
+
     // Default fallback
     return 1;
   } catch {
@@ -66,9 +66,9 @@ export const readCache = <T,>(baseKey: string, userId?: number): T | undefined =
     const key = getUserCacheKey(baseKey, userId);
     const raw = localStorage.getItem(key);
     if (!raw) return undefined;
-    
+
     const cached: CachedData<T> = JSON.parse(raw);
-    
+
     // Check expiration
     const now = Date.now();
     if (cached.timestamp && (now - cached.timestamp) > CACHE_TTL) {
@@ -76,7 +76,7 @@ export const readCache = <T,>(baseKey: string, userId?: number): T | undefined =
       localStorage.removeItem(key);
       return undefined;
     }
-    
+
     // Verify user ID matches (security check)
     const currentUserId = getUserId();
     if (cached.userId && cached.userId !== currentUserId) {
@@ -84,7 +84,7 @@ export const readCache = <T,>(baseKey: string, userId?: number): T | undefined =
       localStorage.removeItem(key);
       return undefined;
     }
-    
+
     return cached.data;
   } catch (err) {
     console.error('Failed to read cache', err);
@@ -124,7 +124,7 @@ export const clearCache = (baseKey: string, userId?: number): void => {
       const currentUserId = getUserId();
       const key = getUserCacheKey(baseKey, currentUserId);
       localStorage.removeItem(key);
-      
+
       // Also try to clear common user IDs (1-100) to be thorough
       for (let i = 1; i <= 100; i++) {
         const userKey = getUserCacheKey(baseKey, i);
@@ -144,6 +144,53 @@ export const clearSidebarCaches = (userId?: number): void => {
   clearCache(CACHE_KEYS.CAMPAIGNS, userId);
   clearCache(CACHE_KEYS.CONVERSATIONS_PAGE, userId);
   clearCache(CACHE_KEYS.DASHBOARD, userId);
+};
+
+/**
+ * Clear all app-related caches for the current user or all users
+ */
+export const clearAllCaches = (userId?: number): void => {
+  try {
+    // 1. Clear all keys defined in CACHE_KEYS
+    Object.values(CACHE_KEYS).forEach(baseKey => {
+      clearCache(baseKey, userId);
+    });
+
+    // 2. Clear known fixed keys including UI preferences
+    const fixedKeys = [
+      'campaigner-chat-cache',
+      'draft',
+      'campaigner-chat',
+      'neel-taylor-conversation-history',
+      'campaigner-chat-display',
+      'campaigner-user-id',
+      'campaigner-auth',
+      'auth_token',
+      'campaigner-sidebar-collapsed',
+      'campaigner-active-tab',
+      'campaigner-conversation-history'
+    ];
+    fixedKeys.forEach(key => localStorage.removeItem(key));
+
+    // 3. Clear keys with specific prefixes (conversations, etc.)
+    const prefixes = ['conversation-', 'campaigner-', 'chat-history-'];
+    const keysToRemove: string[] = [];
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) {
+        if (prefixes.some(p => key.startsWith(p))) {
+          keysToRemove.push(key);
+        }
+      }
+    }
+
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+
+    console.log('All account data and caches cleared successfully');
+  } catch (err) {
+    console.error('Failed to clear all caches', err);
+  }
 };
 
 /**
