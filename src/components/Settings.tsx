@@ -35,7 +35,7 @@ export const Settings = () => {
     preferences: {
       darkMode: false,
       notifications: true,
-      emailUpdates: true,
+      emailUpdates: true,    
       autoSave: true,
       language: "en"
     },

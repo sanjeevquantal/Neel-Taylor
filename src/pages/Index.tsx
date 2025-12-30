@@ -30,7 +30,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const params = useParams();
-  
+
   // Determine active tab from URL
   const getActiveTabFromPath = (pathname: string) => {
     if (pathname === '/') return 'chat';
@@ -71,7 +71,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     // Handle both sidebar format (id, title) and full format
     const cached = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
     if (!cached) return [];
-    
+
     // If cached data has full structure, use it; otherwise it's sidebar format
     return cached.map((item: any) => ({
       id: item.id,
@@ -85,7 +85,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   });
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
   const [campaignsError, setCampaignsError] = useState<string | null>(null);
-  
+
   const [conversations, setConversations] = useState<Array<{
     id: number;
     title?: string;
@@ -116,7 +116,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   });
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
-  
+
   // Sidebar conversations state (simpler format for sidebar list)
   const [sidebarConversations, setSidebarConversations] = useState<Array<{
     id: number;
@@ -136,7 +136,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }));
   });
   const [isLoadingSidebarConversations, setIsLoadingSidebarConversations] = useState(false);
-  
+
   // Fetch sidebar conversations (simpler format for sidebar list)
   const fetchSidebarConversations = async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -150,7 +150,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
         updated_at?: string | null;
         created_at?: string | null;
       }> = [];
-      
+
       if (Array.isArray(data)) {
         items = data.map((it: any, idx: number) => ({
           id: Number(it?.id ?? idx + 1),
@@ -170,7 +170,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       } else if (typeof data === 'string') {
         items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
       }
-      
+
       // Filter out pending deletions
       const filtered = items.filter(item => !pendingDeletedConversations.current.has(item.id));
       setSidebarConversations(filtered);
@@ -195,7 +195,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
         tone?: string;
         leads?: Array<any>;
       }> = [];
-      
+
       if (Array.isArray(data)) {
         items = data.map((it: any, idx: number) => ({
           id: Number(it?.id ?? idx + 1),
@@ -217,12 +217,12 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       } else if (typeof data === 'string') {
         items = [{ id: 1, title: data }];
       }
-      
+
       // Filter out pending deletions
       const filtered = items.filter(item => !pendingDeletedCampaigns.current.has(item.id));
       // Note: campaigns state is managed by the campaigns tab useEffect, but we update cache here
       writeCache(CACHE_KEYS.CAMPAIGNS, filtered);
-      
+
       // Fetch credits when campaigns are refreshed
       fetchUserCredits()
         .then(data => writeCache(CACHE_KEYS.CREDITS, data))
@@ -273,7 +273,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     const handleCacheInvalidate = (event: Event) => {
       const customEvent = event as CustomEvent<{ type: 'conversations' | 'campaigns' | 'all' }>;
       const { type } = customEvent.detail || { type: 'all' };
-      
+
       if (type === 'conversations' || type === 'all') {
         fetchSidebarConversations({ silent: true });
       }
@@ -285,7 +285,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     window.addEventListener('cache-invalidate', handleCacheInvalidate);
     return () => window.removeEventListener('cache-invalidate', handleCacheInvalidate);
   }, []);
-  
+
   // Delete dialog states
   const [deleteCampaignDialog, setDeleteCampaignDialog] = useState<{
     open: boolean;
@@ -293,7 +293,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     campaignName: string;
     conversationTitle: string | null;
   }>({ open: false, campaignId: null, campaignName: "", conversationTitle: null });
-  
+
   const [deleteConversationDialog, setDeleteConversationDialog] = useState<{
     open: boolean;
     conversationId: number | null;
@@ -360,7 +360,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const campaignsLoadedRef = useRef(false);
   // Track if we've ever loaded (even if empty) - never reset this
   const campaignsEverLoadedRef = useRef(false);
-  
+
   useEffect(() => {
     if (activeTab === 'campaigns') {
       const fetchCampaigns = async () => {
@@ -372,7 +372,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             setIsLoadingCampaigns(true);
           }
         }
-        
+
         // Track if this is the first load in this session
         const isFirstLoad = !campaignsLoadedRef.current;
         if (isFirstLoad) {
@@ -390,7 +390,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             leads?: Array<any>;
             conversation_id?: number;
           }> = [];
-          
+
           if (Array.isArray(data)) {
             newItems = data.map((it: any, idx: number) => ({
               id: Number(it?.id ?? idx + 1),
@@ -412,61 +412,19 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               conversation_id: it?.conversation_id,
             }));
           }
-          
-          // Merge new campaigns with existing ones - only add campaigns that don't exist
-          // Also update existing campaigns with fresh data if available
-          // AND remove campaigns that were deleted (exist locally but not in API response)
+
           setCampaigns(prevCampaigns => {
-            const existingIds = new Set(prevCampaigns.map(c => c.id));
-            const newItemIds = new Set(newItems.map(item => item.id));
-            const campaignsToAdd = newItems.filter(item => !existingIds.has(item.id));
-            
-            // Update existing campaigns with fresh data (in case status, tone, etc. changed)
-            // AND filter out campaigns that were deleted (not in newItems)
-            // AND filter out campaigns that are pending deletion
-            const updatedCampaigns = prevCampaigns
-              .map(existing => {
-                // Skip if pending deletion
-                if (pendingDeletedCampaigns.current.has(existing.id)) {
-                  return null;
-                }
-                
-                const freshData = newItems.find(item => item.id === existing.id);
-                if (freshData) {
-                  // Campaign exists in API - remove from pending deletions
-                  pendingDeletedCampaigns.current.delete(existing.id);
-                  // Merge fresh data with existing, preserving all fields
-                  return {
-                    ...existing,
-                    ...freshData,
-                    // Preserve leads if they exist in existing but not in fresh
-                    leads: freshData.leads?.length > 0 ? freshData.leads : existing.leads,
-                  };
-                }
-                return null; // Mark for removal if not in newItems
-              })
-              .filter((campaign): campaign is NonNullable<typeof campaign> => {
-                // Remove campaigns that don't exist in newItems (were deleted)
-                return campaign !== null && newItemIds.has(campaign.id);
-              });
-            
-            // Also filter out pending deletions from new items
-            const filteredNewItems = campaignsToAdd.filter(item => 
-              !pendingDeletedCampaigns.current.has(item.id)
-            );
-            
-            // Merge: updated existing + new, or if no existing, use new items
-            const merged = prevCampaigns.length > 0 
-              ? [...updatedCampaigns, ...filteredNewItems]
-              : newItems.filter(item => !pendingDeletedCampaigns.current.has(item.id));
-            
+            // Ensure correct sorting: API returns newest items first.
+            // We use newItems as the source of truth, but filter out pending deletions.
+            const merged = newItems.filter(item => !pendingDeletedCampaigns.current.has(item.id));
+
             // Update cache with full data structure
             writeCache(CACHE_KEYS.CAMPAIGNS, merged);
             return merged;
           });
         } catch (err: any) {
           let errorMessage = 'Failed to load campaigns';
-          
+
           if (err instanceof NetworkError) {
             switch (err.type) {
               case 'OFFLINE':
@@ -487,7 +445,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
           } else {
             errorMessage = err?.message || 'Failed to load campaigns';
           }
-          
+
           setCampaignsError(errorMessage);
         } finally {
           setIsLoadingCampaigns(false);
@@ -506,7 +464,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   const conversationsLoadedRef = useRef(false);
   // Track if we've ever loaded (even if empty) - never reset this
   const conversationsEverLoadedRef = useRef(false);
-  
+
   useEffect(() => {
     if (activeTab === 'conversations') {
       const fetchConversations = async () => {
@@ -518,7 +476,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             setIsLoadingConversations(true);
           }
         }
-        
+
         // Track if this is the first load in this session
         const isFirstLoad = !conversationsLoadedRef.current;
         if (isFirstLoad) {
@@ -539,7 +497,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             last_active?: string;
             has_campaign?: boolean;
           }> = [];
-          
+
           if (Array.isArray(data)) {
             newItems = data.map((it: any, idx: number) => ({
               id: Number(it?.id ?? idx + 1),
@@ -567,58 +525,22 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               has_campaign: it?.has_campaign || false,
             }));
           }
-          
+
           // Merge new conversations with existing ones - only add conversations that don't exist
           // Also update existing conversations with fresh data if available
           // AND remove conversations that were deleted (exist locally but not in API response)
           setConversations(prevConversations => {
-            const existingIds = new Set(prevConversations.map(c => c.id));
-            const newItemIds = new Set(newItems.map(item => item.id));
-            const conversationsToAdd = newItems.filter(item => !existingIds.has(item.id));
-            
-            // Update existing conversations with fresh data
-            // AND filter out conversations that were deleted (not in newItems)
-            // AND filter out conversations that are pending deletion
-            const updatedConversations = prevConversations
-              .map(existing => {
-                // Skip if pending deletion
-                if (pendingDeletedConversations.current.has(existing.id)) {
-                  return null;
-                }
-                
-                const freshData = newItems.find(item => item.id === existing.id);
-                if (freshData) {
-                  // Conversation exists in API - remove from pending deletions
-                  pendingDeletedConversations.current.delete(existing.id);
-                  return {
-                    ...existing,
-                    ...freshData,
-                  };
-                }
-                return null; // Mark for removal if not in newItems
-              })
-              .filter((conversation): conversation is NonNullable<typeof conversation> => {
-                // Remove conversations that don't exist in newItems (were deleted)
-                return conversation !== null && newItemIds.has(conversation.id);
-              });
-            
-            // Also filter out pending deletions from new items
-            const filteredNewItems = conversationsToAdd.filter(item => 
-              !pendingDeletedConversations.current.has(item.id)
-            );
-            
-            // Merge: updated existing + new, or if no existing, use new items
-            const merged = prevConversations.length > 0 
-              ? [...updatedConversations, ...filteredNewItems]
-              : newItems.filter(item => !pendingDeletedConversations.current.has(item.id));
-            
+            // Ensure correct sorting: API returns newest items first.
+            // We use newItems as the source of truth, but filter out pending deletions.
+            const merged = newItems.filter(item => !pendingDeletedConversations.current.has(item.id));
+
             // Update cache with full data structure
             writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, merged);
             return merged;
           });
         } catch (err: any) {
           let errorMessage = 'Failed to load conversations';
-          
+
           if (err instanceof NetworkError) {
             switch (err.type) {
               case 'OFFLINE':
@@ -639,7 +561,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
           } else {
             errorMessage = err?.message || 'Failed to load conversations';
           }
-          
+
           setConversationsError(errorMessage);
         } finally {
           setIsLoadingConversations(false);
@@ -658,10 +580,10 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     switch (activeTab) {
       case 'chat':
         return (
-          <ChatInterface 
-            freshLogin={freshLogin} 
-            isSidebarCollapsed={isSidebarCollapsed} 
-            initialConversationId={activeConversationId} 
+          <ChatInterface
+            freshLogin={freshLogin}
+            isSidebarCollapsed={isSidebarCollapsed}
+            initialConversationId={activeConversationId}
             onConversationIdChange={(id) => {
               setActiveConversationId(id);
               // Refresh sidebar conversations when a new conversation is created
@@ -676,11 +598,11 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                   });
                 navigate(`/conversations/${id}`, { replace: true });
               }
-            }} 
+            }}
             onNewChat={() => {
               setActiveConversationId(null);
               navigate('/', { replace: true });
-            }} 
+            }}
           />
         );
       case 'campaign-builder':
@@ -696,7 +618,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             const diffMins = Math.floor(diffMs / 60000);
             const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
-            
+
             if (diffMins < 1) return 'Just now';
             if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
             if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
@@ -756,8 +678,8 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             {!isLoadingCampaigns && !campaignsError && campaigns.length > 0 && (
               <div className="grid gap-4">
                 {campaigns.map((campaign) => (
-                  <div 
-                    key={campaign.id} 
+                  <div
+                    key={campaign.id}
                     className="p-6 border rounded-lg hover:bg-muted/50 cursor-pointer transition-smooth bg-gradient-card shadow-soft"
                     onClick={() => navigate(`/campaigns/${campaign.id}`)}
                   >
@@ -769,7 +691,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                             {campaign.status || 'draft'}
                           </span>
                         </div>
-                        
+
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                           {campaign.leads && campaign.leads.length > 0 && (
                             <span className="flex items-center">
@@ -791,11 +713,11 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2 ml-4">
-                        <Button 
-                          variant="default" 
-                          size="sm" 
+                        <Button
+                          variant="default"
+                          size="sm"
                           className="bg-gradient-primary !shadow-none hover:!shadow-none hover:!scale-100 hover:brightness-90 active:scale-95 transition-all"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -804,22 +726,22 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         >
                           View
                         </Button>
-                        <Button 
-                          variant="destructive" 
-                          size="sm" 
+                        <Button
+                          variant="destructive"
+                          size="sm"
                           className="!shadow-none hover:!shadow-none hover:bg-destructive/80 active:scale-95 transition-all"
                           onClick={(e) => {
                             e.stopPropagation();
                             const campaignName = campaign.title || `Campaign ${campaign.id}`;
                             const hasConversation = campaign.conversation_id !== undefined && campaign.conversation_id !== null;
-                            
+
                             // Find conversation title from existing conversations state
                             let conversationTitle: string | null = null;
                             if (hasConversation && campaign.conversation_id) {
                               const associatedConversation = conversations.find(c => c.id === campaign.conversation_id);
                               conversationTitle = associatedConversation?.title || `Conversation #${campaign.conversation_id}`;
                             }
-                            
+
                             setDeleteCampaignDialog({
                               open: true,
                               campaignId: campaign.id,
@@ -849,88 +771,88 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
 
             {!isLoadingCampaigns && !campaignsError && campaigns.length === 0 && (
               <div className="flex flex-col items-center justify-center min-h-[60vh] py-12">
-              <div className="relative mb-8">
-                <div className="w-32 h-32 bg-gradient-primary/20 rounded-full flex items-center justify-center shadow-glow">
-                  <Target className="w-16 h-16 text-primary" />
+                <div className="relative mb-8">
+                  <div className="w-32 h-32 bg-gradient-primary/20 rounded-full flex items-center justify-center shadow-glow">
+                    <Target className="w-16 h-16 text-primary" />
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-soft">
+                    <Zap className="w-4 h-4 text-primary-foreground" />
+                  </div>
                 </div>
-                <div className="absolute -top-2 -right-2 w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-soft">
-                  <Zap className="w-4 h-4 text-primary-foreground" />
+
+                <div className="text-center max-w-2xl mb-8">
+                  <h2 className="text-2xl font-semibold mb-3">No campaigns yet</h2>
+                  <p className="text-muted-foreground text-lg mb-2">
+                    Campaigns will be shown here once created
+                  </p>
+                  <p className="text-muted-foreground mb-6">
+                    Start building your first campaign to see it appear in this dashboard
+                  </p>
+                  <Button
+                    onClick={() => navigate('/')}
+                    className="bg-gradient-primary shadow-soft hover:shadow-medium transition-smooth"
+                    size="lg"
+                  >
+                    Create Your First Campaign
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+
+                {/* Feature Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 w-full max-w-4xl">
+                  <Card className="p-6 bg-gradient-card shadow-soft hover:shadow-medium transition-smooth border-border/50">
+                    <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                      <Mail className="w-6 h-6 text-primary" />
+                    </div>
+                    <h3 className="font-semibold mb-2">Email Campaigns</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Create targeted email sequences with AI-powered personalization
+                    </p>
+                  </Card>
+
+                  <Card className="p-6 bg-gradient-card shadow-soft hover:shadow-medium transition-smooth border-border/50">
+                    <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                      <Users className="w-6 h-6 text-primary" />
+                    </div>
+                    <h3 className="font-semibold mb-2">Targeted Outreach</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Reach the right audience with persona-based campaign targeting
+                    </p>
+                  </Card>
+
+                  <Card className="p-6 bg-gradient-card shadow-soft hover:shadow-medium transition-smooth border-border/50">
+                    <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                      <BarChart3 className="w-6 h-6 text-primary" />
+                    </div>
+                    <h3 className="font-semibold mb-2">Track Performance</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Monitor campaign metrics and optimize your marketing efforts
+                    </p>
+                  </Card>
+                </div>
+
+                {/* Benefits List */}
+                <div className="mt-12 w-full max-w-2xl">
+                  <Card className="p-6 bg-muted/30 border-border/50">
+                    <h3 className="font-semibold mb-4 text-center">What you can do with campaigns</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        "AI-powered campaign creation",
+                        "Multi-channel marketing support",
+                        "Automated email sequences",
+                        "Real-time performance tracking",
+                        "Persona-based targeting",
+                        "A/B testing capabilities"
+                      ].map((benefit, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+                          <span className="text-sm text-muted-foreground">{benefit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
                 </div>
               </div>
-
-              <div className="text-center max-w-2xl mb-8">
-                <h2 className="text-2xl font-semibold mb-3">No campaigns yet</h2>
-                <p className="text-muted-foreground text-lg mb-2">
-                  Campaigns will be shown here once created
-                </p>
-                <p className="text-muted-foreground mb-6">
-                  Start building your first campaign to see it appear in this dashboard
-                </p>
-                <Button 
-                  onClick={() => navigate('/')}
-                  className="bg-gradient-primary shadow-soft hover:shadow-medium transition-smooth"
-                  size="lg"
-                >
-                  Create Your First Campaign
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-
-              {/* Feature Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 w-full max-w-4xl">
-                <Card className="p-6 bg-gradient-card shadow-soft hover:shadow-medium transition-smooth border-border/50">
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                    <Mail className="w-6 h-6 text-primary" />
-                  </div>
-                  <h3 className="font-semibold mb-2">Email Campaigns</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Create targeted email sequences with AI-powered personalization
-                  </p>
-                </Card>
-
-                <Card className="p-6 bg-gradient-card shadow-soft hover:shadow-medium transition-smooth border-border/50">
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                    <Users className="w-6 h-6 text-primary" />
-                  </div>
-                  <h3 className="font-semibold mb-2">Targeted Outreach</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Reach the right audience with persona-based campaign targeting
-                  </p>
-                </Card>
-
-                <Card className="p-6 bg-gradient-card shadow-soft hover:shadow-medium transition-smooth border-border/50">
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                    <BarChart3 className="w-6 h-6 text-primary" />
-                  </div>
-                  <h3 className="font-semibold mb-2">Track Performance</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Monitor campaign metrics and optimize your marketing efforts
-                  </p>
-                </Card>
-              </div>
-
-              {/* Benefits List */}
-              <div className="mt-12 w-full max-w-2xl">
-                <Card className="p-6 bg-muted/30 border-border/50">
-                  <h3 className="font-semibold mb-4 text-center">What you can do with campaigns</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[
-                      "AI-powered campaign creation",
-                      "Multi-channel marketing support",
-                      "Automated email sequences",
-                      "Real-time performance tracking",
-                      "Persona-based targeting",
-                      "A/B testing capabilities"
-                    ].map((benefit, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
-                        <span className="text-sm text-muted-foreground">{benefit}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              </div>
-            </div>
             )}
           </div>
         );
@@ -949,7 +871,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             const diffMins = Math.floor(diffMs / 60000);
             const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
-            
+
             if (diffMins < 1) return 'Just now';
             if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
             if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
@@ -1010,8 +932,8 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
             {!isLoadingConversations && !conversationsError && conversations.length > 0 && (
               <div className="grid gap-4">
                 {conversations.map((conversation) => (
-                  <div 
-                    key={conversation.id} 
+                  <div
+                    key={conversation.id}
                     className="p-6 border rounded-lg hover:bg-muted/50 cursor-pointer transition-smooth bg-gradient-card shadow-soft"
                     onClick={() => navigate(`/conversations/${conversation.id}`)}
                   >
@@ -1026,7 +948,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         {conversation.description && (
                           <p className="text-muted-foreground mb-3">{conversation.description}</p>
                         )}
-                        
+
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                           <span className="flex items-center">
                             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1050,11 +972,11 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2 ml-4">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             navigate(`/conversations/${conversation.id}`);
@@ -1065,21 +987,21 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         {/* <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                           Export
                         </Button> */}
-                        <Button 
-                          variant="destructive" 
-                          size="sm" 
+                        <Button
+                          variant="destructive"
+                          size="sm"
                           className="!shadow-none hover:!shadow-none hover:bg-destructive/80 active:scale-95 transition-all"
                           onClick={(e) => {
                             e.stopPropagation();
                             const conversationTitle = conversation.title || `Conversation #${conversation.id}`;
                             const hasCampaign = conversation.has_campaign || false;
-                            
+
                             // Find campaign name from existing campaigns state or cache (synchronously)
                             let campaignName: string | null = null;
                             if (hasCampaign) {
                               // First check in current campaigns state
                               let associatedCampaign = campaigns.find(c => c.conversation_id === conversation.id);
-                              
+
                               // If not found in state, check cache
                               if (!associatedCampaign) {
                                 const cachedCampaigns = readCache<Array<any>>(CACHE_KEYS.CAMPAIGNS);
@@ -1087,13 +1009,13 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                                   associatedCampaign = cachedCampaigns.find((c: any) => c.conversation_id === conversation.id);
                                 }
                               }
-                              
+
                               if (associatedCampaign) {
                                 // Handle both title and name properties from cache
                                 campaignName = (associatedCampaign as any).title || (associatedCampaign as any).name || `Campaign ${associatedCampaign.id}`;
                               }
                             }
-                            
+
                             // Open modal immediately with cached data
                             setDeleteConversationDialog({
                               open: true,
@@ -1107,7 +1029,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                         </Button>
                       </div>
                     </div>
-                    
+
                     {conversation.job_titles && conversation.job_titles.length > 0 && (
                       <div className="flex items-center space-x-2">
                         {conversation.job_titles.map((tag) => (
@@ -1143,11 +1065,11 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar 
+      <Sidebar
         ref={sidebarRef}
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
-        onLogout={onLogout} 
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onLogout={onLogout}
         onCollapsedChange={setIsSidebarCollapsed}
         onSelectConversation={(id) => {
           setActiveConversationId(id);
@@ -1160,7 +1082,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       <main className={`${isSidebarCollapsed ? 'ml-16' : 'ml-64'} transition-all duration-300 overflow-auto min-h-screen`}>
         {renderContent()}
       </main>
-      
+
       {/* Delete Campaign Dialog */}
       <Dialog open={deleteCampaignDialog.open} onOpenChange={(open) => setDeleteCampaignDialog({ ...deleteCampaignDialog, open })}>
         <DialogContent className="max-w-2xl w-[90%] sm:w-[600px]">
@@ -1191,53 +1113,53 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               size="lg"
               onClick={async () => {
                 if (!deleteCampaignDialog.campaignId) return;
-                
+
                 // Store the campaign data for potential restoration
                 const campaignToDelete = campaigns.find(c => c.id === deleteCampaignDialog.campaignId);
                 const campaignId = deleteCampaignDialog.campaignId;
                 const campaignName = deleteCampaignDialog.campaignName;
-                
+
                 // Close modal immediately
                 setDeleteCampaignDialog({ open: false, campaignId: null, campaignName: "", conversationTitle: null });
-                
+
                 // Mark as pending deletion
                 pendingDeletedCampaigns.current.add(campaignId);
-                
+
                 // Optimistically remove campaign from UI
                 setCampaigns(prevCampaigns => {
                   const updated = prevCampaigns.filter(c => c.id !== campaignId);
                   writeCache(CACHE_KEYS.CAMPAIGNS, updated);
                   return updated;
                 });
-                
+
                 // Also optimistically remove the associated conversation from UI
                 if (campaignToDelete?.conversation_id) {
                   // Mark as pending deletion
                   pendingDeletedConversations.current.add(campaignToDelete.conversation_id);
-                  
+
                   setConversations(prevConversations => {
                     const updated = prevConversations.filter(c => c.id !== campaignToDelete.conversation_id);
                     writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, updated);
                     return updated;
                   });
                 }
-                
+
                 // Perform deletion in background
                 try {
                   await apiClient.delete(`/api/campaigns/${campaignId}`);
-                  
+
                   // Remove from pending deletions (API confirmed)
                   pendingDeletedCampaigns.current.delete(campaignId);
                   if (campaignToDelete?.conversation_id) {
                     pendingDeletedConversations.current.delete(campaignToDelete.conversation_id);
                   }
-                  
+
                   // After successful deletion, refresh sidebar to sync with server
                   fetchSidebarCampaigns({ silent: true });
                   if (campaignToDelete?.conversation_id) {
                     fetchSidebarConversations({ silent: true });
                   }
-                  
+
                   toast.success(`Campaign "${campaignName}" deleted successfully`);
                 } catch (err: any) {
                   // Remove from pending deletions (deletion failed)
@@ -1245,7 +1167,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                   if (campaignToDelete?.conversation_id) {
                     pendingDeletedConversations.current.delete(campaignToDelete.conversation_id);
                   }
-                  
+
                   // Restore campaign on error
                   if (campaignToDelete) {
                     setCampaigns(prevCampaigns => {
@@ -1255,7 +1177,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                     });
                     fetchSidebarCampaigns({ silent: true });
                   }
-                  
+
                   // Restore conversation on error
                   if (campaignToDelete?.conversation_id) {
                     const associatedConversation = conversations.find(c => c.id === campaignToDelete.conversation_id);
@@ -1264,7 +1186,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                       fetchSidebarConversations({ silent: true });
                     }
                   }
-                  
+
                   let errorMessage = 'Failed to delete campaign';
                   if (err instanceof NetworkError) {
                     switch (err.type) {
@@ -1326,56 +1248,56 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
               size="lg"
               onClick={async () => {
                 if (!deleteConversationDialog.conversationId) return;
-                
+
                 // Store the conversation data for potential restoration
                 const conversationToDelete = conversations.find(c => c.id === deleteConversationDialog.conversationId);
                 const conversationId = deleteConversationDialog.conversationId;
                 const conversationTitle = deleteConversationDialog.conversationTitle;
-                
+
                 // Close modal immediately
                 setDeleteConversationDialog({ open: false, conversationId: null, conversationTitle: "", campaignName: null });
-                
+
                 // Mark as pending deletion
                 pendingDeletedConversations.current.add(conversationId);
-                
+
                 // Optimistically remove conversation from UI
                 setConversations(prevConversations => {
                   const updated = prevConversations.filter(c => c.id !== conversationId);
                   writeCache(CACHE_KEYS.CONVERSATIONS_PAGE, updated);
                   return updated;
                 });
-                
+
                 // Store associated campaign for potential restoration
                 const associatedCampaign = campaigns.find(c => c.conversation_id === conversationId);
-                
+
                 // Optimistically remove the associated campaign from UI
                 if (associatedCampaign) {
                   // Mark as pending deletion
                   pendingDeletedCampaigns.current.add(associatedCampaign.id);
-                  
+
                   setCampaigns(prevCampaigns => {
                     const updated = prevCampaigns.filter(c => c.id !== associatedCampaign.id);
                     writeCache(CACHE_KEYS.CAMPAIGNS, updated);
                     return updated;
                   });
                 }
-                
+
                 // Perform deletion in background
                 try {
                   await apiClient.delete(`/api/conversations/${conversationId}`);
-                  
+
                   // Remove from pending deletions (API confirmed)
                   pendingDeletedConversations.current.delete(conversationId);
                   if (associatedCampaign) {
                     pendingDeletedCampaigns.current.delete(associatedCampaign.id);
                   }
-                  
+
                   // After successful deletion, refresh sidebar to sync with server
                   sidebarRef.current?.refreshConversations({ silent: true });
                   if (associatedCampaign) {
                     sidebarRef.current?.refreshCampaigns({ silent: true });
                   }
-                  
+
                   toast.success(`Conversation "${conversationTitle}" deleted successfully`);
                 } catch (err: any) {
                   // Remove from pending deletions (deletion failed)
@@ -1383,7 +1305,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                   if (associatedCampaign) {
                     pendingDeletedCampaigns.current.delete(associatedCampaign.id);
                   }
-                  
+
                   // Restore conversation on error
                   if (conversationToDelete) {
                     setConversations(prevConversations => {
@@ -1393,7 +1315,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                     });
                     fetchSidebarConversations({ silent: true });
                   }
-                  
+
                   // Restore campaign on error
                   if (associatedCampaign) {
                     setCampaigns(prevCampaigns => {
@@ -1403,7 +1325,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                     });
                     fetchSidebarCampaigns({ silent: true });
                   }
-                  
+
                   let errorMessage = 'Failed to delete conversation';
                   if (err instanceof NetworkError) {
                     switch (err.type) {
