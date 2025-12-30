@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useImperativeHandle, forwardRef } from "react";
+import { useState, forwardRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,7 +17,6 @@ import {
   History,
   LogOut
 } from "lucide-react";
-import apiClient, { NetworkError } from "@/lib/api";
 
 interface SidebarProps {
   activeTab: string;
@@ -26,29 +25,38 @@ interface SidebarProps {
   onCollapsedChange?: (collapsed: boolean) => void;
   onSelectConversation?: (conversationId: number) => void;
   onSelectCampaign?: (campaignId: number) => void;
+  conversations?: Array<{
+    id: number;
+    title?: string | null;
+    last_message?: string | null;
+    updated_at?: string | null;
+    created_at?: string | null;
+  }>;
+  campaigns?: Array<{
+    id: number;
+    title?: string;
+    status?: string;
+    created_at?: string;
+    tone?: string;
+    leads?: Array<any>;
+  }>;
+  isLoadingConversations?: boolean;
+  isLoadingCampaigns?: boolean;
 }
 
 export interface SidebarRef {
   refreshConversations: (options?: { silent?: boolean }) => Promise<void>;
+  refreshCampaigns: (options?: { silent?: boolean }) => Promise<void>;
 }
 
-type ConversationItem = {
-  id: number;
-  title?: string | null;
-  last_message?: string | null;
-  updated_at?: string | null;
-  created_at?: string | null;
-};
-
-export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabChange, onLogout, onCollapsedChange, onSelectConversation, onSelectCampaign }, ref) => {
+export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ 
+  activeTab, 
+  onTabChange, 
+  onLogout, 
+  onCollapsedChange,
+}, ref) => {
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isLoadingChats, setIsLoadingChats] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
-  const [campaignError, setCampaignError] = useState<string | null>(null);
-  const [campaigns, setCampaigns] = useState<Array<{ id: number; name: string }>>([]);
 
   const handleCollapse = () => {
     const newCollapsed = !isCollapsed;
@@ -58,162 +66,12 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
 
   const navItems = [
     { id: 'chat', label: 'AI Chat', icon: MessageSquare, path: '/' },
+    { id: 'conversations', label: 'Conversations', icon: History, path: '/conversations' },
     { id: 'campaigns', label: 'Campaigns', icon: Target, path: '/campaigns' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
     { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
-    { id: 'conversations', label: 'Conversations', icon: History, path: '/conversations' },
+    // { id: 'campaign-builder', label: 'Campaign Builder', icon: Target, path: '/campaign-builder' },
   ];
-
-  // Function to fetch conversations
-  const fetchConversations = async (options?: { silent?: boolean }) => {
-    const silent = options?.silent === true;
-    if (!silent) setIsLoadingChats(true);
-    setChatError(null);
-    try {
-      // Get user id from storage or default to 1
-      let userId: number = 1;
-      try {
-        const stored = localStorage.getItem('campaigner-user-id');
-        if (stored) userId = Number(stored) || 1;
-        else localStorage.setItem('campaigner-user-id', String(userId));
-      } catch {}
-
-      const data = await apiClient.get<any>(`/api/conversations/?load_messages=false`);
-      // Normalize possible shapes: array of objects, array of strings, or object with "items"
-      let items: ConversationItem[] = [];
-      if (Array.isArray(data)) {
-        items = data.map((it: any, idx: number) => ({
-          id: Number(it?.id ?? idx + 1),
-          title: it?.title ?? it?.name ?? null,
-          last_message: it?.last_message ?? it?.lastMessage ?? null,
-          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
-          created_at: it?.created_at ?? it?.createdAt ?? null,
-        }));
-      } else if (data && Array.isArray((data as any).items)) {
-        items = (data as any).items.map((it: any, idx: number) => ({
-          id: Number(it?.id ?? idx + 1),
-          title: it?.title ?? it?.name ?? null,
-          last_message: it?.last_message ?? it?.lastMessage ?? null,
-          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
-          created_at: it?.created_at ?? it?.createdAt ?? null,
-        }));
-      } else if (typeof data === 'string') {
-        // Some APIs may return a plain string; treat as a single conversation
-        items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
-      }
-      setConversations(items);
-    } catch (err: any) {
-      let errorMessage = 'Failed to load conversations';
-      
-      if (err instanceof NetworkError) {
-        switch (err.type) {
-          case 'OFFLINE':
-            errorMessage = 'You appear to be offline. Please check your internet connection.';
-            break;
-          case 'NETWORK_ERROR':
-            errorMessage = 'Unable to connect to the server. Please check your connection.';
-            break;
-          case 'TIMEOUT':
-            errorMessage = 'Request timed out. Please try again.';
-            break;
-          case 'SERVER_ERROR':
-            errorMessage = 'Server error occurred. Please try again later.';
-            break;
-          default:
-            errorMessage = err.message || 'Failed to load conversations';
-        }
-      } else {
-        errorMessage = err?.message || 'Failed to load conversations';
-      }
-      
-      setChatError(errorMessage);
-    } finally {
-      if (!silent) setIsLoadingChats(false);
-    }
-  };
-
-  // Fetch conversations for the sidebar list
-  useEffect(() => {
-    // Only fetch when expanded to avoid wasted work on tiny sidebar
-    fetchConversations();
-    // Optionally could re-fetch on interval in future
-  }, []);
-
-  // Expose refresh function to parent component
-  useImperativeHandle(ref, () => ({
-    refreshConversations: (options?: { silent?: boolean }) => fetchConversations(options)
-  }), []);
-
-  // Fetch user campaigns for the sidebar list
-  useEffect(() => {
-    const fetchCampaigns = async () => {
-      setIsLoadingCampaigns(true);
-      setCampaignError(null);
-      try {
-        let userId: number = 1;
-        try {
-          const stored = localStorage.getItem('campaigner-user-id');
-          if (stored) userId = Number(stored) || 1;
-          else localStorage.setItem('campaigner-user-id', String(userId));
-        } catch {}
-
-        const data = await apiClient.get<any>(`/api/campaigns/?load_leads=false&load_email_sequence=false`);
-        let items: Array<{ id: number; name: string }> = [];
-        if (Array.isArray(data)) {
-          items = data.map((it: any, idx: number) => ({
-            id: Number(it?.id ?? idx + 1),
-            name: `Campaign ${it?.id ?? idx + 1}`,
-          }));
-        } else if (data && Array.isArray((data as any).items)) {
-          items = (data as any).items.map((it: any, idx: number) => ({
-            id: Number(it?.id ?? idx + 1),
-            name: `Campaign ${it?.id ?? idx + 1}`,
-          }));
-        } else if (typeof data === 'string') {
-          items = [{ id: 1, name: data }];
-        }
-        setCampaigns(items);
-      } catch (err: any) {
-        let errorMessage = 'Failed to load campaigns';
-        
-        if (err instanceof NetworkError) {
-          switch (err.type) {
-            case 'OFFLINE':
-              errorMessage = 'You appear to be offline. Please check your internet connection.';
-              break;
-            case 'NETWORK_ERROR':
-              errorMessage = 'Unable to connect to the server. Please check your connection.';
-              break;
-            case 'TIMEOUT':
-              errorMessage = 'Request timed out. Please try again.';
-              break;
-            case 'SERVER_ERROR':
-              errorMessage = 'Server error occurred. Please try again later.';
-              break;
-            default:
-              errorMessage = err.message || 'Failed to load campaigns';
-          }
-        } else {
-          errorMessage = err?.message || 'Failed to load campaigns';
-        }
-        
-        setCampaignError(errorMessage);
-      } finally {
-        setIsLoadingCampaigns(false);
-      }
-    };
-
-    fetchCampaigns();
-  }, []);
-
-  const sortedConversations = useMemo(() => {
-    const parseDate = (v?: string | null) => (v ? new Date(v).getTime() : 0);
-    return [...conversations].sort((a, b) => {
-      const aTime = parseDate(a.updated_at) || parseDate(a.created_at) || a.id;
-      const bTime = parseDate(b.updated_at) || parseDate(b.created_at) || b.id;
-      return bTime - aTime; // latest first
-    });
-  }, [conversations]);
 
   return (
     <Card className={`h-screen bg-gradient-card border-r transition-all duration-300 ${
@@ -281,71 +139,6 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeTab, onTabC
             )}
           </Button>
         ))}
-
-        {/* Chats list */}
-        {!isCollapsed && (
-          <div className="mt-6">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground px-2 mb-2">Chats</div>
-            <div className="space-y-1 max-h-72 overflow-auto pr-1">
-              {isLoadingChats && (
-                <div className="text-xs text-muted-foreground px-2 py-1">Loading…</div>
-              )}
-              {chatError && (
-                <div className="text-xs text-destructive px-2 py-1">{chatError}</div>
-              )}
-              {!isLoadingChats && !chatError && sortedConversations.map((c) => (
-                <Button
-                  key={c.id}
-                  variant="ghost"
-                  className="w-full justify-start h-9 text-left px-2"
-                  onClick={() => {
-                    onSelectConversation?.(c.id);
-                    onTabChange('chat');
-                  }}
-                >
-                  <span className="truncate">
-                    {c.title?.trim() || `Conversation ${c.id}`}
-                  </span>
-                </Button>
-              ))}
-              {!isLoadingChats && !chatError && sortedConversations.length === 0 && (
-                <div className="text-xs text-muted-foreground px-2 py-1">No chats yet</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Campaigns list */}
-        {!isCollapsed && (
-          <div className="mt-6">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground px-2 mb-2">Campaigns</div>
-            <div className="space-y-1 max-h-72 overflow-auto pr-1">
-              {isLoadingCampaigns && (
-                <div className="text-xs text-muted-foreground px-2 py-1">Loading…</div>
-              )}
-              {campaignError && (
-                <div className="text-xs text-destructive px-2 py-1">{campaignError}</div>
-              )}
-              {!isLoadingCampaigns && !campaignError && campaigns.map((c) => (
-                <Button
-                  key={c.id}
-                  variant="ghost"
-                  className="w-full justify-start h-9 text-left px-2"
-                  onClick={() => {
-                    onSelectCampaign?.(c.id);
-                  }}
-                >
-                  <span className="truncate">
-                    {c.name}
-                  </span>
-                </Button>
-              ))}
-              {!isLoadingCampaigns && !campaignError && campaigns.length === 0 && (
-                <div className="text-xs text-muted-foreground px-2 py-1">No campaigns yet</div>
-              )}
-            </div>
-          </div>
-        )}
       </nav>
 
       {/* Footer */}

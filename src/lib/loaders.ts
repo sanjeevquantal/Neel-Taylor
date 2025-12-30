@@ -1,4 +1,4 @@
-import { LoaderFunctionArgs, LoaderFunction, redirect } from 'react-router-dom';
+import { LoaderFunctionArgs, LoaderFunction, redirect, defer } from 'react-router-dom';
 import apiClient, { NetworkError } from './api';
 
 // Types for loader data
@@ -8,7 +8,15 @@ export type CampaignLoaderData = {
   status?: string;
   created_at?: string;
   tone?: string;
-  leads?: Array<{ id?: number; email?: string; name?: string }>;
+  leads?: Array<{ 
+    id?: number; 
+    email?: string; 
+    name?: string; // Legacy field, prefer first_name + last_name
+    first_name?: string;
+    last_name?: string;
+    job_title?: string;
+    linkedin_url?: string;
+  }>;
   email_sequence?: {
     sequence_id?: number;
     campaign_id?: number;
@@ -40,31 +48,38 @@ export type ConversationLoaderData = {
   }>;
 };
 
-// Campaign loader function
-export const campaignLoader: LoaderFunction<CampaignLoaderData> = async ({ params }) => {
+// Campaign loader function - using defer for non-blocking navigation
+export const campaignLoader: LoaderFunction = async ({ params }) => {
   const campaignId = Number(params.id);
   
   if (!campaignId || Number.isNaN(campaignId)) {
     throw new Response('Campaign ID is required', { status: 400 });
   }
 
-  try {
-    const response = await apiClient.get<CampaignLoaderData>(`/api/campaigns/${campaignId}`);
-    return response;
-  } catch (error: any) {
-    // If unauthorized, redirect to login/home which renders Login when not authenticated
-    if (error instanceof NetworkError && error.httpStatus === 401) {
-      throw redirect('/');
+  // Defer the API call so navigation isn't blocked
+  const campaignPromise = (async () => {
+    try {
+      const response = await apiClient.get<CampaignLoaderData>(`/api/campaigns/${campaignId}`);
+      return response;
+    } catch (error: any) {
+      // If unauthorized, redirect to login/home which renders Login when not authenticated
+      if (error instanceof NetworkError && error.httpStatus === 401) {
+        throw redirect('/');
+      }
+      // Normalize 404 errors to a clean message
+      if (error instanceof NetworkError && error.httpStatus === 404) {
+        throw new Response('Campaign not found', { status: 404 });
+      }
+      // For other errors, re-throw as Response with concise message
+      const message = error instanceof Error ? error.message : 'Failed to load campaign';
+      const status = (error instanceof NetworkError && error.httpStatus) || error?.status || 500;
+      throw new Response(message, { status });
     }
-    // Normalize 404 errors to a clean message
-    if (error instanceof NetworkError && error.httpStatus === 404) {
-      throw new Response('Campaign not found', { status: 404 });
-    }
-    // For other errors, re-throw as Response with concise message
-    const message = error instanceof Error ? error.message : 'Failed to load campaign';
-    const status = (error instanceof NetworkError && error.httpStatus) || error?.status || 500;
-    throw new Response(message, { status });
-  }
+  })();
+
+  return defer({
+    campaign: campaignPromise
+  });
 }
 
 // Conversation loader function

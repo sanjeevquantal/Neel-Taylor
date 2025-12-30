@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ import {
   Save,
   RefreshCw
 } from "lucide-react";
+import { fetchUserCredits, CreditUsageResponse } from "@/lib/api";
+import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
 
 export const Settings = () => {
   const [settings, setSettings] = useState({
@@ -44,6 +46,50 @@ export const Settings = () => {
     }
   });
 
+  const [credits, setCredits] = useState<CreditUsageResponse | null>(() => {
+    // Initialize from cache if available
+    return readCache<CreditUsageResponse>(CACHE_KEYS.CREDITS) || null;
+  });
+  const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+  const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("profile");
+
+  const loadCredits = async (forceRefresh: boolean = false) => {
+    // Use cache if available and not forcing refresh
+    if (!forceRefresh && credits) {
+      return; // Already have data, skip fetch
+    }
+
+    setIsLoadingCredits(true);
+    setCreditsError(null);
+    try {
+      const data = await fetchUserCredits();
+      setCredits(data);
+      // Cache the credits data
+      writeCache(CACHE_KEYS.CREDITS, data);
+    } catch (err: any) {
+      setCreditsError(err?.message || 'Failed to load credits');
+      console.error('Error fetching credits:', err);
+    } finally {
+      setIsLoadingCredits(false);
+    }
+  };
+
+  // Fetch credits when billing tab is selected
+  useEffect(() => {
+    if (activeTab === 'billing') {
+      // Load from cache first if we don't have credits in state
+      if (!credits) {
+        const cachedCredits = readCache<CreditUsageResponse>(CACHE_KEYS.CREDITS);
+        if (cachedCredits) {
+          setCredits(cachedCredits);
+        }
+      }
+      // Always fetch fresh data when visiting billing tab (but won't fetch if already have data and not forcing)
+      loadCredits(false);
+    }
+  }, [activeTab]);
+
   const handleSave = () => {
     // Save settings logic would go here
     // console.log("Settings saved:", settings);
@@ -62,7 +108,7 @@ export const Settings = () => {
         </Button>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
+      <Tabs defaultValue="profile" value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="profile" className="flex items-center space-x-2">
             <User className="w-4 h-4" />
@@ -274,40 +320,147 @@ export const Settings = () => {
 
         <TabsContent value="billing">
           <Card className="p-6 bg-gradient-card shadow-soft">
-            <h2 className="text-xl font-semibold mb-4 flex items-center">
-              <CreditCard className="w-5 h-5 mr-2" />
-              Billing & Usage
-            </h2>
-            <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-4 border rounded-lg">
-                  <div className="text-2xl font-bold text-primary">247</div>
-                  <div className="text-sm text-muted-foreground">Credits Used</div>
-                </div>
-                <div className="text-center p-4 border rounded-lg">
-                  <div className="text-2xl font-bold text-primary">500</div>
-                  <div className="text-sm text-muted-foreground">Total Credits</div>
-                </div>
-                <div className="text-center p-4 border rounded-lg">
-                  <div className="text-2xl font-bold text-success">253</div>
-                  <div className="text-sm text-muted-foreground">Remaining</div>
-                </div>
-              </div>
-              
-              <div className="p-4 border rounded-lg bg-muted/30">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium">Current Plan</h3>
-                  <Badge variant="secondary">Pro Plan</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Access to advanced AI features, unlimited campaigns, and priority support.
-                </p>
-                <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">Change Plan</Button>
-                  <Button variant="outline" size="sm">View Usage</Button>
-                </div>
-              </div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center">
+                <CreditCard className="w-5 h-5 mr-2" />
+                Billing & Usage
+              </h2>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => loadCredits(true)}
+                disabled={isLoadingCredits}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingCredits ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
             </div>
+            
+            {isLoadingCredits && !credits ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">Loading credit information...</p>
+              </div>
+            ) : creditsError ? (
+              <div className="text-center py-8">
+                <p className="text-destructive mb-2">{creditsError}</p>
+                <Button variant="outline" size="sm" onClick={() => loadCredits(true)}>
+                  Try Again
+                </Button>
+              </div>
+            ) : credits ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-4 border rounded-lg bg-muted/30">
+                    <div className="text-2xl font-bold text-primary">
+                      {credits.credits_used.toFixed(1)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Credits Used</div>
+                  </div>
+                  <div className="text-center p-4 border rounded-lg bg-muted/30">
+                    <div className="text-2xl font-bold text-primary">
+                      {credits.plan_limit}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Total Credits</div>
+                  </div>
+                  <div className="text-center p-4 border rounded-lg bg-muted/30">
+                    <div className={`text-2xl font-bold ${
+                      credits.credits_remaining > 0 ? 'text-green-600' : 'text-destructive'
+                    }`}>
+                      {credits.credits_remaining.toFixed(1)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Remaining</div>
+                  </div>
+                </div>
+
+                {/* Usage Progress Bar */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Usage</span>
+                    <span className="font-medium">
+                      {credits.usage_percentage < 1 
+                        ? credits.usage_percentage.toFixed(3) 
+                        : credits.usage_percentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className={`h-2.5 rounded-full transition-all ${
+                        credits.usage_percentage >= 100 
+                          ? 'bg-destructive' 
+                          : credits.usage_percentage >= 80 
+                          ? 'bg-yellow-500' 
+                          : 'bg-primary'
+                      }`}
+                      style={{ 
+                        width: `${Math.min(credits.usage_percentage, 100)}%`,
+                        minWidth: credits.usage_percentage > 0 ? '2px' : '0px',
+                        maxWidth: '100%'
+                      }}
+                    />
+                  </div>
+                  {credits.alert_status && (
+                    <p className={`text-xs ${
+                      credits.alert_status === 'exceeded' 
+                        ? 'text-destructive' 
+                        : 'text-yellow-600'
+                    }`}>
+                      {credits.alert_status === 'exceeded' 
+                        ? '⚠️ Credit limit exceeded' 
+                        : '⚠️ Approaching credit limit'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Billing Cycle Info */}
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium">Billing Cycle</h3>
+                    <Badge variant="secondary">Active</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground">Cycle Start</div>
+                      <div className="font-medium">
+                        {new Date(credits.billing_cycle_start).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Cycle End</div>
+                      <div className="font-medium">
+                        {new Date(credits.billing_cycle_end).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Lifetime Tokens Used: <span className="font-medium">{credits.lifetime_tokens_used.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plan Info */}
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium">Current Plan</h3>
+                    <Badge variant="secondary">Pro Plan</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Access to advanced AI features, unlimited campaigns, and priority support.
+                  </p>
+                  <div className="flex space-x-2">
+                    <Button variant="outline" size="sm">Change Plan</Button>
+                    <Button variant="outline" size="sm">View Usage</Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No credit information available</p>
+                <Button variant="outline" size="sm" onClick={() => loadCredits(true)} className="mt-2">
+                  Load Credits
+                </Button>
+              </div>
+            )}
           </Card>
         </TabsContent>
       </Tabs>

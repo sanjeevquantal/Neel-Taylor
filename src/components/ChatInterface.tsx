@@ -4,16 +4,137 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  Send, 
-  Bot, 
-  User, 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Send,
+  Bot,
+  User,
   Sparkles,
   Paperclip,
   X
 } from "lucide-react";
-import apiClient, { NetworkError } from "@/lib/api";
+import apiClient, { NetworkError, streamChat, fetchUserCredits } from "@/lib/api";
+import { writeCache, CACHE_KEYS } from "@/lib/cache";
 import { UploadModal } from "@/components/UploadModal";
+
+// Parse metadata from message content
+interface ParsedMetadata {
+  textContent: string;
+  metadata: any | null;
+}
+
+const parseMetadata = (content: string): ParsedMetadata => {
+  // Find the metadata marker (case-insensitive, handles whitespace variations)
+  const metadataMarker = '-%METADATA%-';
+  const markerIndex = content.indexOf(metadataMarker);
+
+  if (markerIndex === -1) {
+    return { textContent: content, metadata: null };
+  }
+
+  // Extract text before metadata (remove trailing newlines/whitespace)
+  const textBefore = content.substring(0, markerIndex).trim();
+
+  // Extract JSON after metadata marker (skip the marker and any whitespace/newlines)
+  const jsonStart = markerIndex + metadataMarker.length;
+  let jsonString = content.substring(jsonStart).trim();
+
+  // Remove any leading newlines or whitespace
+  jsonString = jsonString.replace(/^\s*\n\s*/, '');
+
+  if (!jsonString) {
+    return { textContent: content, metadata: null };
+  }
+
+  try {
+    const metadata = JSON.parse(jsonString);
+    console.log('Parsed metadata successfully:', metadata);
+    return { textContent: textBefore, metadata };
+  } catch (e) {
+    console.error('Failed to parse metadata:', e, 'JSON string:', jsonString.substring(0, 200));
+    // If parsing fails, return original content
+    return { textContent: content, metadata: null };
+  }
+};
+
+// Component to render lead list table
+const LeadListTable = ({ data }: { data: any[] }) => {
+  console.log('LeadListTable rendering with data:', data);
+
+  if (!Array.isArray(data) || data.length === 0) {
+    console.log('LeadListTable: No data or empty array');
+    return null;
+  }
+
+  // Calculate max height for 5 rows (approximately 48px per row)
+  const maxHeight = '240px'; // ~48px per row * 5 rows
+
+  return (
+    <div className="mt-4 border-2 border-border rounded-lg overflow-hidden bg-card shadow-md">
+      <div className="p-2 bg-muted/50 border-b border-border">
+        <h4 className="text-sm font-semibold">Lead List ({data.length} leads)</h4>
+      </div>
+      <div className="relative overflow-x-auto">
+        <div
+          className="overflow-y-auto"
+          style={{ maxHeight }}
+        >
+          <Table>
+            <TableHeader className="sticky top-0 bg-muted/50 z-10">
+              <TableRow className="bg-muted/30">
+                <TableHead className="min-w-[150px] font-semibold">Name</TableHead>
+                <TableHead className="min-w-[200px] font-semibold">Title</TableHead>
+                <TableHead className="min-w-[180px] font-semibold">Email</TableHead>
+                <TableHead className="min-w-[120px] font-semibold">LinkedIn</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((lead, index) => (
+                <TableRow key={index} className="hover:bg-muted/20">
+                  <TableCell className="font-medium min-w-[150px]">{lead.name || '-'}</TableCell>
+                  <TableCell className="min-w-[200px]">{lead.title || '-'}</TableCell>
+                  <TableCell className="min-w-[180px]">
+                    {lead.email ? (
+                      <a
+                        href={`mailto:${lead.email}`}
+                        className="text-primary hover:underline text-sm break-all"
+                      >
+                        {lead.email}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
+                  <TableCell className="min-w-[120px]">
+                    {lead.linkedin ? (
+                      <a
+                        href={lead.linkedin}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline text-sm font-medium"
+                      >
+                        View Profile →
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Simple but structured markdown parser for chat messages
 const parseMarkdown = (text: string) => {
@@ -117,6 +238,10 @@ interface Message {
   hasFile?: boolean;
 }
 
+interface PersistedMessage extends Omit<Message, 'timestamp'> {
+  timestamp: string;
+}
+
 interface ChatInterfaceProps {
   freshLogin?: boolean;
   isSidebarCollapsed?: boolean;
@@ -125,20 +250,79 @@ interface ChatInterfaceProps {
   onNewChat?: () => void;
 }
 
+const CHAT_STORAGE_KEY = 'campaigner-chat-cache';
+const DRAFT_STORAGE_KEY = 'draft';
+
+const getConversationStorageKey = (id: number | null) =>
+  id ? `conversation-${id}` : DRAFT_STORAGE_KEY;
+
+const readChatStorage = (): Record<string, PersistedMessage[]> => {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('Failed to read chat storage', err);
+    return {};
+  }
+};
+
+const writeChatStorage = (store: Record<string, PersistedMessage[]>) => {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(store));
+  } catch (err) {
+    console.error('Failed to write chat storage', err);
+  }
+};
+
+const loadMessagesFromStorage = (conversationId: number | null): Message[] => {
+  const store = readChatStorage();
+  const key = getConversationStorageKey(conversationId);
+  const persisted = store[key];
+  if (!persisted || !Array.isArray(persisted)) return [];
+  return persisted.map((msg) => ({
+    ...msg,
+    timestamp: new Date(msg.timestamp),
+  }));
+};
+
+const persistMessagesToStorage = (conversationId: number | null, messages: Message[]) => {
+  const store = readChatStorage();
+  const key = getConversationStorageKey(conversationId);
+  store[key] = messages.map((msg) => ({
+    ...msg,
+    timestamp: msg.timestamp.toISOString(),
+  }));
+  writeChatStorage(store);
+};
+
+const migrateDraftToConversationStorage = (newConversationId: number) => {
+  const store = readChatStorage();
+  const draftMessages = store[DRAFT_STORAGE_KEY];
+  if (draftMessages && draftMessages.length) {
+    store[getConversationStorageKey(newConversationId)] = draftMessages;
+    delete store[DRAFT_STORAGE_KEY];
+    writeChatStorage(store);
+  }
+};
+
 export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, initialConversationId = null, onConversationIdChange, onNewChat }: ChatInterfaceProps) => {
- 
+
 
   // Function to start a new chat
   const startNewChat = () => {
     setMessages([]);
     setConversationId(null);
+    setConversationTitle(null);
     setIsInitialTyping(false);
     setConversationHasFile(false); // Reset file upload flag for new chat
+    persistMessagesToStorage(null, []);
     onNewChat?.();
   };
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => loadMessagesFromStorage(initialConversationId ?? null));
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId);
+  const [conversationTitle, setConversationTitle] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
@@ -152,6 +336,18 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const skipNextHistoryLoadRef = useRef(false);
+
+  // Auto-adjust textarea height
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      // capped at 160px, min height handled by CSS
+      textareaRef.current.style.height = `${Math.min(scrollHeight, 160)}px`;
+    }
+  }, [input]);
 
   // Scroll to bottom on new messages or typing changes
   useEffect(() => {
@@ -163,9 +359,18 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   }, [messages, isTyping]);
 
 
+  // Persist messages whenever they change
+  useEffect(() => {
+    persistMessagesToStorage(conversationId ?? null, messages);
+  }, [conversationId, messages]);
+
   // Sync external initial conversation id into local state
   useEffect(() => {
     setConversationId(initialConversationId ?? null);
+    // Reset title when conversation ID changes externally
+    if (!initialConversationId) {
+      setConversationTitle(null);
+    }
   }, [initialConversationId]);
 
   // Load full conversation history when conversationId changes (from sidebar selection)
@@ -174,10 +379,15 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setIsLoadingHistory(true);
       setIsInitialTyping(false);
       setIsTyping(false);
-      // Clear existing messages immediately so previous conversation disappears
-      setMessages([]);
       try {
         const data = await apiClient.get<any>(`/api/conversations/${id}`);
+        // Extract conversation title from API response
+        if (data?.title) {
+          setConversationTitle(data.title);
+        } else {
+          setConversationTitle(null);
+        }
+
         // Normalize possible shapes to Message[]
         // Expect either { messages: [...] } or [...]
         const rawMessages: any[] = Array.isArray(data) ? data : (Array.isArray(data?.messages) ? data.messages : []);
@@ -189,30 +399,30 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           hasFile: m?.has_file || m?.hasFile || false, // Check if backend stores this info
         }));
         setMessages(mapped);
-        
+
         // Check if this conversation has had any file uploads
         // Look for hasFile property first, then fallback to content patterns
         const hasFileContent = mapped.some(msg => {
           // First check if the message has the hasFile property
           if (msg.hasFile) return true;
-          
+
           // Fallback to content pattern detection
           const content = msg.content.toLowerCase();
-          return content.includes('file_content') || 
-                 content.includes('uploaded file') ||
-                 content.includes('file uploaded') ||
-                 content.includes('analyze the uploaded') ||
-                 content.includes('based on its content') ||
-                 content.includes('document you') ||
-                 content.includes('file you') ||
-                 (msg.type === 'user' && (
-                   content.includes('analyze') && content.includes('file') ||
-                   content.includes('upload') && content.includes('document')
-                 )) ||
-                 (msg.type === 'assistant' && (
-                   content.includes('file') && content.includes('uploaded') ||
-                   content.includes('document') && content.includes('content')
-                 ));
+          return content.includes('file_content') ||
+            content.includes('uploaded file') ||
+            content.includes('file uploaded') ||
+            content.includes('analyze the uploaded') ||
+            content.includes('based on its content') ||
+            content.includes('document you') ||
+            content.includes('file you') ||
+            (msg.type === 'user' && (
+              content.includes('analyze') && content.includes('file') ||
+              content.includes('upload') && content.includes('document')
+            )) ||
+            (msg.type === 'assistant' && (
+              content.includes('file') && content.includes('uploaded') ||
+              content.includes('document') && content.includes('content')
+            ));
         });
         // console.log('Checking conversation for file uploads:', { hasFileContent, messageCount: mapped.length, messages: mapped.map(m => ({ type: m.type, hasFile: m.hasFile, content: m.content.substring(0, 50) })) });
         if (typeof (data as any)?.knowledge_base_uploaded === 'boolean') {
@@ -227,12 +437,26 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       }
     };
 
-    if (conversationId) {
-      void loadHistory(conversationId);
+    if (!conversationId) {
+      setMessages(loadMessagesFromStorage(null));
+      setConversationTitle(null);
+      setIsLoadingHistory(false);
+      return;
+    }
+
+    if (skipNextHistoryLoadRef.current) {
+      skipNextHistoryLoadRef.current = false;
+      return;
+    }
+
+    const cachedMessages = loadMessagesFromStorage(conversationId);
+    if (cachedMessages.length) {
+      setMessages(cachedMessages);
     } else {
       setMessages([]);
-      setIsLoadingHistory(false);
     }
+
+    void loadHistory(conversationId);
   }, [conversationId]);
 
   const personas = [
@@ -242,9 +466,36 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     { id: 'enterprise', label: 'Enterprise Executive', description: 'ROI-focused, strategic' }
   ];
 
+  const syncConversationContext = async (candidateId?: number) => {
+    let resolvedId = candidateId;
+
+    if (!resolvedId) {
+      try {
+        const conversations = await apiClient.get<any[]>('/api/conversations');
+        if (conversations && conversations.length > 0) {
+          resolvedId = conversations[0]?.id;
+        }
+      } catch (err) {
+        console.error('Failed to fetch conversation ID after streaming:', err);
+      }
+    }
+
+    if (resolvedId) {
+      migrateDraftToConversationStorage(resolvedId);
+      skipNextHistoryLoadRef.current = true;
+      setConversationId(resolvedId);
+      onConversationIdChange?.(resolvedId);
+    }
+  };
+
 
   const sendMessageWithContent = async (content: string) => {
     setIsTyping(true);
+
+    // Create assistant message ID but don't add it to messages yet
+    const assistantMessageId = (Date.now() + 1).toString();
+    let hasReceivedFirstChunk = false;
+    let streamedConversationId: number | undefined;
 
     try {
       const formData = new FormData();
@@ -258,36 +509,118 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         formData.append('file', uploadedFile);
       }
 
+      // Track if this was a new conversation
+      const wasNewConversation = !conversationId;
 
-      const data = await apiClient.post<APIResponse>('/api/chat', formData);
-      // console.log('Received API response:', data);
-      
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.msg || 'I received your information but couldn\'t process it properly. Please try again.',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, aiResponse]);
+      // Use streaming API
+      const streamResult = await streamChat('/api/chat', formData, {
+        onChunk: (chunk: string) => {
+          // On first chunk, add the message and hide typing indicator
+          if (!hasReceivedFirstChunk) {
+            hasReceivedFirstChunk = true;
+            setIsTyping(false);
 
-      // Persist conversation id from response if present
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
-        onConversationIdChange?.(data.conversation_id);
-      }
-      if (typeof data.knowledge_base_uploaded === 'boolean') {
-        setConversationHasFile(data.knowledge_base_uploaded);
-        if (data.knowledge_base_uploaded) {
-          setAttachedUrl('');
-          setIsUploadingFile(false);
+            // Add the assistant message with the first chunk
+            const aiResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: chunk,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Update the assistant message content as subsequent chunks arrive
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            ));
+          }
+        },
+        onComplete: async (fullContent: string) => {
+          // If no chunks were received, create the message now with full content
+          if (!hasReceivedFirstChunk) {
+            setIsTyping(false);
+            const aiResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: fullContent || 'No response generated.',
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Final update with complete content
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: fullContent }
+                : msg
+            ));
+          }
+
+          // Fetch credits after chat completes (campaigns/credits may have been updated)
+          if (conversationId) {
+            fetchUserCredits()
+              .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+              .catch(err => {
+                console.error('Failed to fetch credits after chat:', err);
+              });
+          }
+        },
+        onError: (error: Error) => {
+          console.error('Streaming error:', error);
+          setIsTyping(false);
+
+          let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
+
+          if (error instanceof NetworkError) {
+            switch (error.type) {
+              case 'OFFLINE':
+                errorMessage = '🌐 **You appear to be offline.**\n\nPlease check your internet connection and try again.';
+                break;
+              case 'NETWORK_ERROR':
+                errorMessage = '🔌 **Unable to connect to the server.**\n\nThis could be due to:\n• Internet connection issues\n• Server maintenance\n• Network firewall restrictions\n\nPlease check your connection and try again.';
+                break;
+              case 'TIMEOUT':
+                errorMessage = '⏱️ **Request timed out.**\n\nThe server is taking too long to respond. Please try again.';
+                break;
+              case 'SERVER_ERROR':
+                errorMessage = '🚫 **Server error occurred.**\n\nThe server encountered an issue. Please try again in a few moments.';
+                break;
+              default:
+                errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
+            }
+          }
+
+          // Add or update the message with error content
+          if (!hasReceivedFirstChunk) {
+            const errorResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: errorMessage,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorResponse]);
+          } else {
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: errorMessage }
+                : msg
+            ));
+          }
         }
+      });
+
+      streamedConversationId = streamResult?.conversationId;
+
+      if (wasNewConversation) {
+        await syncConversationContext(streamedConversationId);
       }
     } catch (error) {
-      console.error('Error calling API:', error);
-      
+      console.error('Error calling streaming API:', error);
+      setIsTyping(false);
+
       let errorMessage = 'Sorry, I encountered an error while processing your information. Please try again later.';
-      
+
       if (error instanceof NetworkError) {
         switch (error.type) {
           case 'OFFLINE':
@@ -306,83 +639,202 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
         }
       }
-      
-      const errorResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: errorMessage,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorResponse]);
+
+      // Add or update the message with error content
+      if (!hasReceivedFirstChunk) {
+        const errorResponse: Message = {
+          id: assistantMessageId,
+          type: 'assistant',
+          content: errorMessage,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, errorResponse]);
+      } else {
+        setMessages(prev => prev.map(msg =>
+          msg.id === assistantMessageId
+            ? { ...msg, content: errorMessage }
+            : msg
+        ));
+      }
     } finally {
       setIsTyping(false);
     }
   };
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
+  const sendMessage = async (overrideContent?: string, overrideFile?: File, overrideUrl?: string) => {
+    const finalContent = overrideContent !== undefined ? overrideContent : input;
+    const finalFile = overrideFile !== undefined ? overrideFile : uploadedFile;
+    const finalUrl = overrideUrl !== undefined ? overrideUrl : attachedUrl;
+
+    if (!finalContent.trim() && !finalFile && !finalUrl) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
-      content: input,
+      content: finalContent || (finalFile ? `Uploaded file: ${finalFile.name}` : `Attached URL: ${finalUrl}`),
       timestamp: new Date(),
       persona: selectedPersona,
-      hasFile: !!uploadedFile
+      hasFile: !!finalFile
     };
 
     setMessages(prev => [...prev, userMessage]);
+
+    // Clear states
     setInput('');
-    // console.log('Clearing uploaded file before sending');
-    setUploadedFile(null); // Clear file immediately when sending
-    if (uploadedFile) {
-      setConversationHasFile(true); // Mark conversation as having had a file
+    setUploadedFile(null);
+    setAttachedUrl('');
+
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    if (finalFile) {
+      setConversationHasFile(true);
     }
     setIsTyping(true);
 
+    // Create assistant message ID but don't add it to messages yet
+    const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessageIdRef = assistantMessageId; // for stable reference
+
+    let hasReceivedFirstChunk = false;
+    let streamedConversationId: number | undefined;
+
     try {
       const formData = new FormData();
-      formData.append('query', input);
+      formData.append('query', finalContent || "Please analyze the attached information.");
       formData.append('conversation_id', String(conversationId || 0));
-      if (attachedUrl) {
-        formData.append('URL', attachedUrl);
-        formData.append('conversation_id', String(conversationId || 0));
+      if (finalUrl) {
+        formData.append('URL', finalUrl);
       }
-      if (uploadedFile) {
-        formData.append('file', uploadedFile);
+      if (finalFile) {
+        formData.append('file', finalFile);
       }
 
+      // Track if this was a new conversation
+      const wasNewConversation = !conversationId;
 
-      const data = await apiClient.post<APIResponse>('/api/chat', formData);
-      // console.log('Received API response:', data);
-      
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: data.msg || 'I received your message but couldn\'t process it properly. Please try again.',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, aiResponse]);
+      // Use streaming API
+      const streamResult = await streamChat('/api/chat', formData, {
+        onChunk: (chunk: string) => {
+          // On first chunk, add the message and hide typing indicator
+          if (!hasReceivedFirstChunk) {
+            hasReceivedFirstChunk = true;
+            setIsTyping(false);
 
-      // Persist conversation id from response if present
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
-        onConversationIdChange?.(data.conversation_id);
-      }
-      if (typeof data.knowledge_base_uploaded === 'boolean') {
-        setConversationHasFile(data.knowledge_base_uploaded);
-        if (data.knowledge_base_uploaded) {
-          setAttachedUrl('');
-          setIsUploadingFile(false);
+            // Add the assistant message with the first chunk
+            const aiResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: chunk,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Update the assistant message content as subsequent chunks arrive
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            ));
+          }
+        },
+        onComplete: async (fullContent: string) => {
+          // If no chunks were received, create the message now with full content
+          if (!hasReceivedFirstChunk) {
+            setIsTyping(false);
+            const aiResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: fullContent || 'No response generated.',
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, aiResponse]);
+          } else {
+            // Final update with complete content
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: fullContent }
+                : msg
+            ));
+          }
+
+          if (attachedUrl) {
+            setAttachedUrl('');
+            setIsUploadingFile(false);
+            setConversationHasFile(true);
+          }
+
+          // Fetch credits after chat completes (campaigns/credits may have been updated)
+          if (conversationId) {
+            fetchUserCredits()
+              .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+              .catch(err => {
+                console.error('Failed to fetch credits after chat:', err);
+              });
+          }
+        },
+        onError: (error: Error) => {
+          console.error('Streaming error:', error);
+          setIsTyping(false);
+
+          let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
+
+          if (error instanceof NetworkError) {
+            switch (error.type) {
+              case 'OFFLINE':
+                errorMessage = '🌐 **You appear to be offline.**\n\nPlease check your internet connection and try again.';
+                break;
+              case 'NETWORK_ERROR':
+                errorMessage = '🔌 **Unable to connect to the server.**\n\nThis could be due to:\n• Internet connection issues\n• Server maintenance\n• Network firewall restrictions\n\nPlease check your connection and try again.';
+                break;
+              case 'TIMEOUT':
+                errorMessage = '⏱️ **Request timed out.**\n\nThe server is taking too long to respond. Please try again.';
+                break;
+              case 'SERVER_ERROR':
+                errorMessage = '🚫 **Server error occurred.**\n\nThe server encountered an issue. Please try again in a few moments.';
+                break;
+              default:
+                errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
+            }
+          }
+
+          // Add or update the message with error content
+          if (!hasReceivedFirstChunk) {
+            const errorResponse: Message = {
+              id: assistantMessageId,
+              type: 'assistant',
+              content: errorMessage,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorResponse]);
+          } else {
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: errorMessage }
+                : msg
+            ));
+          }
         }
+      });
+
+      streamedConversationId = streamResult?.conversationId;
+
+      if (wasNewConversation) {
+        await syncConversationContext(streamedConversationId);
+      }
+
+      if (attachedUrl) {
+        setAttachedUrl('');
+        setIsUploadingFile(false);
+        setConversationHasFile(true);
       }
     } catch (error) {
-      console.error('Error calling API:', error);
-      
+      console.error('Error calling streaming API:', error);
+
       let errorMessage = 'Sorry, I encountered an error while processing your request. Please try again later.';
-      
+
       if (error instanceof NetworkError) {
         switch (error.type) {
           case 'OFFLINE':
@@ -401,15 +853,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             errorMessage = '❌ **An unexpected error occurred.**\n\nPlease try again later.';
         }
       }
-      
-      const errorResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: errorMessage,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorResponse]);
+
+      // Update the message with error content
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMessageId
+          ? { ...msg, content: errorMessage }
+          : msg
+      ));
     } finally {
       setIsTyping(false);
     }
@@ -432,7 +882,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               <Sparkles className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold">AI Campaign Creator</h2>
+              <h2 className="text-xl font-semibold">{conversationTitle || 'AI Campaign Creator'}</h2>
               {messages.length === 0 && !isLoadingHistory ? (
                 <p className="text-sm text-muted-foreground">Welcome! Share your company info or upload a document to get started</p>
               ) : (
@@ -449,137 +899,164 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
       {/* Messages - with bottom padding for fixed input; centered like ChatGPT */}
       <div ref={listRef} className="flex-1 overflow-y-auto p-4 pb-32">
-        <div className="max-w-2xl mx-auto space-y-4">
-        {/* Empty state when there are no messages */}
-        {messages.length === 0 && !isLoadingHistory && !isInitialTyping && !isTyping && (
-          <div className="flex flex-col items-center justify-center text-center py-16 px-6 select-none">
-            <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center shadow-glow mb-4">
-              <Sparkles className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-2">Welcome to CampAIgn AI</h3>
-            <p className="text-muted-foreground max-w-xl mb-6">
-              Share your company information (About page link) or upload a brief document. Then ask the AI to create a marketing campaign, email sequence, or outreach copy tailored to your brand.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-              <Button variant="outline" onClick={() => setInput("Create a cold email introducing our product to CTOs at SaaS startups")}>Try: Cold email for CTOs</Button>
-              <Button variant="outline" onClick={() => setInput("Draft a 4-step nurture sequence for trial users of our SaaS")}>Try: Nurture sequence</Button>
-              <Button variant="outline" onClick={() => setInput("Summarize the key value props from our website and craft a LinkedIn outreach message")}>Try: LinkedIn outreach</Button>
-              <Button variant="outline" onClick={() => setInput("Generate a launch announcement email for our new feature with CTA")}>Try: Feature launch email</Button>
-            </div>
-          </div>
-        )}
-        {/* Initial typing animation */}
-        {isInitialTyping && (
-          <div className="flex items-start space-x-3">
-            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
-              <Bot className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <Card className="p-4 shadow-soft bg-gradient-card">
-              <div className="flex items-center space-x-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                </div>
-                <span className="text-sm text-muted-foreground">CampAIgn AI is thinking...</span>
+        <div className="max-w-3xl mx-auto space-y-4">
+          {/* Empty state when there are no messages */}
+          {messages.length === 0 && !isLoadingHistory && !isInitialTyping && !isTyping && (
+            <div className="flex flex-col items-center justify-center text-center py-16 px-6 select-none">
+              <div className="w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center shadow-glow mb-4">
+                <Sparkles className="w-6 h-6 text-primary-foreground" />
               </div>
-            </Card>
-          </div>
-        )}
-
-        {/* Loading conversation history */}
-        {isLoadingHistory && (
-          <div className="flex items-start space-x-3">
-            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
-              <Bot className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <Card className="p-4 shadow-soft bg-gradient-card">
-              <div className="flex items-center space-x-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                </div>
-                <span className="text-sm text-muted-foreground">Loading conversation...</span>
+              <h3 className="text-2xl font-semibold mb-2">Welcome to CampAIgn AI</h3>
+              <p className="text-muted-foreground max-w-xl mb-6">
+                Share your company information (About page link) or upload a brief document. Then ask the AI to create a marketing campaign, email sequence, or outreach copy tailored to your brand.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                <Button variant="outline" onClick={() => setInput("Create a cold email introducing our product to CTOs at SaaS startups")}>Try: Cold email for CTOs</Button>
+                <Button variant="outline" onClick={() => setInput("Draft a 4-step nurture sequence for trial users of our SaaS")}>Try: Nurture sequence</Button>
+                <Button variant="outline" onClick={() => setInput("Summarize the key value props from our website and craft a LinkedIn outreach message")}>Try: LinkedIn outreach</Button>
+                <Button variant="outline" onClick={() => setInput("Generate a launch announcement email for our new feature with CTA")}>Try: Feature launch email</Button>
               </div>
-            </Card>
-          </div>
-        )}
-
-
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex items-start space-x-3 ${
-              message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-            }`}
-          >
-            <div className={`aspect-square h-8 rounded-lg flex items-center justify-center ${
-              message.type === 'user' 
-                ? 'bg-primary text-primary-foreground' 
-                : 'bg-gradient-primary text-primary-foreground shadow-glow'
-            }`}>
-              {message.type === 'user' ? (
-                <User className="w-4 h-4" />
-              ) : (
-                <Bot className="w- h-4" />
-              )}
             </div>
-            <Card className={`max-w-2xl p-4 shadow-soft ${
-              message.type === 'user' 
-                ? 'bg-primary/5 border-primary/20' 
-                : 'bg-gradient-card'
-            }`}>
-              <div className="flex items-center justify-between mb-2">
+          )}
+          {/* Initial typing animation */}
+          {isInitialTyping && (
+            <div className="flex items-start space-x-3">
+              <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                <Bot className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <Card className="p-4 shadow-soft bg-gradient-card">
                 <div className="flex items-center space-x-2">
-                  <span className="font-medium">
-                    {message.type === 'user' ? 'You' : 'CampAIgn AI'}
-                  </span>
-                  {message.type === 'assistant' && message.persona && (
-                    <Badge variant="secondary" className="text-xs">
-                      {personas.find(p => p.id === message.persona)?.label}
-                    </Badge>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground ml-4">
-                  {message.timestamp.toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    hour12: true
-                  })}
-                </span>
-              </div>
-              <div className="whitespace-pre-wrap text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
-              {message.hasFile && (
-                <div className="mt-3 pt-3 border-t border-border/30">
-                  <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                    <Paperclip className="w-3 h-3" />
-                    <span>File attached</span>
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
                   </div>
+                  <span className="text-sm text-muted-foreground">CampAIgn AI is thinking...</span>
                 </div>
-              )}
-            </Card>
-          </div>
-        ))}
-
-        {isTyping && (
-          <div className="flex items-start space-x-3">
-            <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
-              <Bot className="w-4 h-4 text-primary-foreground" />
+              </Card>
             </div>
-            <Card className="p-4 shadow-soft bg-gradient-card">
-              <div className="flex items-center space-x-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                </div>
-                <span className="text-sm text-muted-foreground">CampAIgn AI is typing…</span>
+          )}
+
+          {/* Loading conversation history */}
+          {isLoadingHistory && messages.length === 0 && (
+            <div className="flex items-start space-x-3">
+              <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                <Bot className="w-4 h-4 text-primary-foreground" />
               </div>
-            </Card>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+              <Card className="p-4 shadow-soft bg-gradient-card">
+                <div className="flex items-center space-x-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">Loading conversation...</span>
+                </div>
+              </Card>
+            </div>
+          )}
+
+
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex items-start space-x-3 ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+                }`}
+            >
+              <div className={`aspect-square h-8 rounded-lg flex items-center justify-center ${message.type === 'user'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-gradient-primary text-primary-foreground shadow-glow'
+                }`}>
+                {message.type === 'user' ? (
+                  <User className="w-4 h-4" />
+                ) : (
+                  <Bot className="w- h-4" />
+                )}
+              </div>
+              <Card className={`max-w-[85%] sm:max-w-2xl p-4 shadow-soft overflow-hidden break-words rounded-[22px] ${message.type === 'user'
+                ? 'bg-primary/5 border-primary/20'
+                : 'bg-gradient-card'
+                }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium">
+                      {message.type === 'user' ? 'You' : 'CampAIgn AI'}
+                    </span>
+                    {message.type === 'assistant' && message.persona && (
+                      <Badge variant="secondary" className="text-xs">
+                        {personas.find(p => p.id === message.persona)?.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-4">
+                    {message.timestamp.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </span>
+                </div>
+                {(() => {
+                  const { textContent, metadata } = parseMetadata(message.content);
+                  const hasTextContent = textContent && textContent.trim().length > 0;
+
+                  // Debug logging
+                  if (message.type === 'assistant') {
+                    if (message.content.includes('-%METADATA%-')) {
+                      console.log('Message contains metadata marker');
+                      console.log('Full content:', message.content);
+                      console.log('Parsed textContent:', textContent);
+                      console.log('Parsed metadata:', metadata);
+                    }
+                  }
+
+                  // Check if we have valid metadata to display
+                  const hasValidMetadata = metadata && metadata.type === 'lead_list' && Array.isArray(metadata.data) && metadata.data.length > 0;
+
+                  return (
+                    <>
+                      {hasTextContent && (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-hidden" dangerouslySetInnerHTML={{ __html: parseMarkdown(textContent) }} />
+                      )}
+                      {hasValidMetadata && (
+                        <LeadListTable data={metadata.data} />
+                      )}
+                      {!hasTextContent && !hasValidMetadata && (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-hidden" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
+                      )}
+                    </>
+                  );
+                })()}
+                {message.hasFile && (
+                  <div className="mt-3 pt-3 border-t border-border/30">
+                    <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                      <Paperclip className="w-3 h-3" />
+                      <span>File attached</span>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+          ))}
+
+          {isTyping && (
+            <div className="flex items-start space-x-3">
+              <div className="aspect-square h-8 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                <Bot className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <Card className="p-4 shadow-soft bg-gradient-card">
+                <div className="flex items-center space-x-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">CampAIgn AI is typing…</span>
+                </div>
+              </Card>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -591,8 +1068,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             <div key={`file-${uploadedFile.name}`} className="mb-3 p-3 bg-muted rounded-lg border border-input">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-red-500 rounded flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">PDF</span>
+                  <div className={`w-8 h-8 rounded flex items-center justify-center ${uploadedFile.name.toLowerCase().endsWith('.pdf') ? 'bg-red-500' :
+                    uploadedFile.name.toLowerCase().endsWith('.docx') ? 'bg-blue-600' :
+                      'bg-slate-500'
+                    }`}>
+                    <span className="text-white text-[10px] font-bold uppercase">
+                      {uploadedFile.name.split('.').pop()}
+                    </span>
                   </div>
                   <div>
                     <p className="text-sm font-medium truncate max-w-xs">
@@ -643,24 +1125,18 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             </div>
           )}
           <div className="relative">
-            <div className={`flex items-center bg-muted rounded-full border border-input pl-4 pr-2 py-2 min-h-12 max-h-20 ${isTyping ? 'opacity-60' : ''}`}>
+            <div className={`flex items-center bg-muted rounded-[32px] border border-input pl-6 pr-2 py-2 min-h-[56px] ${isTyping ? 'opacity-60' : ''}`}>
               {/* Input field */}
               <Textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={isTyping ? "AI is responding, please wait..." : "Ask AI to create a marketing campaign for your company"}
-                className="flex-1 border-0 bg-transparent px-2 py-0 min-h-6 max-h-16 resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-hidden"
-                style={{ 
-                  height: '1.5rem',
-                  lineHeight: '1.5rem'
+                className="flex-1 border-0 bg-transparent px-2 py-1 min-h-[1.5rem] max-h-[160px] resize-none text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 overflow-y-auto scrollbar-thin"
+                style={{
+                  lineHeight: '1rem'
                 }}
                 disabled={isTyping}
-                onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = '1.5rem';
-                  const newHeight = Math.min(target.scrollHeight, 64); // 64px = 4 lines
-                  target.style.height = newHeight + 'px';
-                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -670,21 +1146,28 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                   }
                 }}
               />
-              
+
               {/* Right side actions */}
-              <div className="flex items-center space-x-2 ml-3">
-                <div 
+              <div className="flex items-center space-x-2 ml-2">
+                <div
                   className="relative"
                   onMouseEnter={() => setShowPaperclipTooltip(true)}
                   onMouseLeave={() => setShowPaperclipTooltip(false)}
                 >
-                  <UploadModal 
-                    onFileSelected={(file) => { setIsUploadingFile(true); handleFileSelected(file); }}
-                    onLinkSelected={(url) => { setAttachedUrl(url); setIsUploadingFile(false); }}
+                  <UploadModal
+                    onFileSelected={(file) => {
+                      setUploadedFile(file);
+                      setIsUploadingFile(false);
+                    }}
+                    onLinkSelected={(url) => {
+                      setAttachedUrl(url);
+                      setIsUploadingFile(false);
+                      sendMessage(undefined, undefined, url);
+                    }}
                     hasUploadedFile={!!uploadedFile || isUploadingFile || conversationHasFile}
                   >
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0 hover:bg-muted-foreground/10"
                       disabled={isTyping || isUploadingFile || !!uploadedFile || conversationHasFile}
@@ -697,22 +1180,24 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                       {isTyping
                         ? "Please wait for AI to finish responding"
                         : conversationHasFile
-                        ? "A knowledge base is already attached to this conversation"
-                        : (isUploadingFile || uploadedFile)
-                        ? "Uploading..."
-                        : "Upload file or link"}
+                          ? "A knowledge base is already attached to this conversation"
+                          : isUploadingFile
+                            ? "Uploading..."
+                            : uploadedFile
+                              ? "File ready to send"
+                              : "Upload file or link"}
                       <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-popover"></div>
                     </div>
                   )}
                 </div>
 
-                <Button 
-                  variant="default" 
+                <Button
+                  variant="default"
                   size="sm"
                   className="h-8 px-3 rounded-full"
                   title={isTyping ? "AI is responding, please wait..." : "Send message"}
-                  onClick={sendMessage}
-                  disabled={!input.trim() || isTyping}
+                  onClick={() => sendMessage()}
+                  disabled={(!input.trim() && !uploadedFile && !attachedUrl) || isTyping}
                 >
                   <Send className="w-4 h-4" />
                 </Button>
