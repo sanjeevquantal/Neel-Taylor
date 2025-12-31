@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { 
-  MessageSquare, 
-  Users, 
-  BarChart3, 
+import {
+  MessageSquare,
+  Users,
+  BarChart3,
   Settings,
   Zap,
   Target,
@@ -42,6 +42,7 @@ interface SidebarProps {
   }>;
   isLoadingConversations?: boolean;
   isLoadingCampaigns?: boolean;
+  activeConversationId?: number | null;
 }
 
 export interface SidebarRef {
@@ -49,11 +50,12 @@ export interface SidebarRef {
   refreshCampaigns: (options?: { silent?: boolean }) => Promise<void>;
 }
 
-export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ 
-  activeTab, 
-  onTabChange, 
-  onLogout, 
+export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
+  activeTab,
+  onTabChange,
+  onLogout,
   onCollapsedChange,
+  activeConversationId,
 }, ref) => {
   const navigate = useNavigate();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -65,7 +67,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
   };
 
   const navItems = [
-    { id: 'chat', label: 'AI Chat', icon: MessageSquare, path: '/' },
+    { id: 'chat', label: 'AI Chat', icon: MessageSquare, path: activeConversationId ? `/conversations/${activeConversationId}` : '/' },
     { id: 'conversations', label: 'Conversations', icon: History, path: '/conversations' },
     { id: 'campaigns', label: 'Campaigns', icon: Target, path: '/campaigns' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics' },
@@ -74,9 +76,8 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
   ];
 
   return (
-    <Card className={`h-screen bg-gradient-card border-r transition-all duration-300 ${
-      isCollapsed ? 'w-16' : 'w-64'
-    } flex flex-col shadow-medium fixed left-0 top-0 z-50`}>
+    <Card className={`h-screen bg-gradient-card border-r transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'
+      } flex flex-col shadow-medium fixed left-0 top-0 z-50`}>
       {/* Header */}
       <div className={`border-b border-border/50 ${isCollapsed ? 'p-2' : 'p-6'}`}>
         {!isCollapsed && (
@@ -103,9 +104,8 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
         <Button
           variant="ghost"
           size="sm"
-          className={`absolute -right-3 h-6 w-6 rounded-full border bg-card shadow-soft ${
-            isCollapsed ? 'top-2' : 'top-6'
-          }`}
+          className={`absolute -right-3 h-6 w-6 rounded-full border bg-card shadow-soft ${isCollapsed ? 'top-2' : 'top-6'
+            }`}
           onClick={handleCollapse}
         >
           {isCollapsed ? (
@@ -118,16 +118,15 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
       </div>
 
       {/* Navigation */}
-      <nav className={`flex-1 space-y-2 ${isCollapsed ? 'p-2' : 'p-4'} overflow-y-auto`}> 
+      <nav className={`flex-1 space-y-2 ${isCollapsed ? 'p-2' : 'p-4'} overflow-y-auto`}>
         {navItems.map((item) => (
           <Button
             key={item.id}
             variant={activeTab === item.id ? "default" : "ghost"}
-            className={`w-full justify-start space-x-3 h-11 transition-smooth ${
-              activeTab === item.id 
-                ? 'bg-gradient-primary shadow-soft text-primary-foreground' 
-                : 'hover:bg-muted/50'
-            }`}
+            className={`w-full justify-start space-x-3 h-11 transition-smooth ${activeTab === item.id
+              ? 'bg-gradient-primary shadow-soft text-primary-foreground'
+              : 'hover:bg-muted/50'
+              }`}
             onClick={() => {
               navigate(item.path);
               onTabChange(item.id);
@@ -144,8 +143,8 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
       {/* Footer */}
       {!isCollapsed && (
         <div className="p-4 border-t border-border/50">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="w-full justify-start space-x-3 h-11 text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={onLogout}
           >
@@ -154,12 +153,12 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({
           </Button>
         </div>
       )}
-      
+
       {/* Collapsed Footer */}
       {isCollapsed && (
         <div className="p-2 border-t border-border/50">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             className="w-full h-11 text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={onLogout}

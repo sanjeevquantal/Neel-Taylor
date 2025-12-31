@@ -350,10 +350,18 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
   // Sync URL param conversation id into local state
   useEffect(() => {
     const urlId = params.id ? Number(params.id) : null;
-    if (urlId !== activeConversationId) {
+
+    // If we have an ID in the URL, update the active conversation
+    if (urlId !== null) {
       setActiveConversationId(urlId);
     }
-  }, [params.id, activeConversationId]);
+    // If we are specifically on the root path, it means a new chat
+    else if (location.pathname === '/') {
+      setActiveConversationId(null);
+    }
+    // Otherwise (e.g. on /campaigns, /settings), we keep the current activeConversationId
+    // so the sidebar can link back to it.
+  }, [params.id, location.pathname]);
 
   // Fetch campaigns when campaigns tab is active - only sync new campaigns, don't replace
   // Use a ref to track if we've loaded initially to avoid refetching on every tab switch
@@ -1068,6 +1076,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       <Sidebar
         ref={sidebarRef}
         activeTab={activeTab}
+        activeConversationId={activeConversationId}
         onTabChange={setActiveTab}
         onLogout={onLogout}
         onCollapsedChange={setIsSidebarCollapsed}

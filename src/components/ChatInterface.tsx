@@ -459,6 +459,19 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     void loadHistory(conversationId);
   }, [conversationId]);
 
+  const refreshTitle = async (id: number) => {
+    try {
+      const data = await apiClient.get<any>(`/api/conversations/${id}?load_messages=false`);
+      if (data?.title) {
+        setConversationTitle(data.title);
+        // Notify Index/Sidebar that a conversation has been updated (for title sync)
+        window.dispatchEvent(new CustomEvent('cache-invalidate', { detail: { type: 'conversations' } }));
+      }
+    } catch (err) {
+      console.error('Failed to refresh title:', err);
+    }
+  };
+
   const personas = [
     { id: 'cto', label: 'Chief Technology Officer', description: 'Tech-focused, efficiency-driven' },
     { id: 'cmo', label: 'Chief Marketing Officer', description: 'Brand-focused, growth-oriented' },
@@ -485,6 +498,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       skipNextHistoryLoadRef.current = true;
       setConversationId(resolvedId);
       onConversationIdChange?.(resolvedId);
+      // Fetch title for the new conversation
+      void refreshTitle(resolvedId);
     }
   };
 
@@ -564,6 +579,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               .catch(err => {
                 console.error('Failed to fetch credits after chat:', err);
               });
+
+            // Periodically refresh title in case it was updated on backend
+            // especially if it's currently the default title
+            if (!conversationTitle || conversationTitle === 'AI Campaign Creator') {
+              void refreshTitle(conversationId);
+            }
           }
         },
         onError: (error: Error) => {
@@ -773,6 +794,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               .catch(err => {
                 console.error('Failed to fetch credits after chat:', err);
               });
+
+            // Periodically refresh title in case it was updated on backend
+            // especially if it's currently the default title
+            if (!conversationTitle || conversationTitle === 'AI Campaign Creator') {
+              void refreshTitle(conversationId);
+            }
           }
         },
         onError: (error: Error) => {
@@ -1175,7 +1202,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                       <Paperclip className="w-4 h-4" />
                     </Button>
                   </UploadModal>
-                  {showPaperclipTooltip && (
+                  {showPaperclipTooltip && (isTyping || conversationHasFile || isUploadingFile) && (
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-popover text-popover-foreground text-sm rounded-md border shadow-md z-[100] whitespace-nowrap">
                       {isTyping
                         ? "Please wait for AI to finish responding"
@@ -1183,9 +1210,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                           ? "A knowledge base is already attached to this conversation"
                           : isUploadingFile
                             ? "Uploading..."
-                            : uploadedFile
-                              ? "File ready to send"
-                              : "Upload file or link"}
+                            : null}
                       <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-popover"></div>
                     </div>
                   )}
