@@ -8,6 +8,8 @@ import Index from "./pages/Index";
 import Campaign from "./pages/Campaign";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import PaymentSuccess from "./pages/PaymentSuccess";
+import PaymentFailure from "./pages/PaymentFailure";
 import { PageLoadingSpinner } from "@/components/LoadingSpinner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { campaignLoader } from "./lib/loaders";
@@ -51,6 +53,59 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   });
   const [isFreshLogin, setIsFreshLogin] = useState(false);
+
+  // Monitor token expiration and check periodically
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkTokenExpiration = () => {
+      try {
+        const authToken = localStorage.getItem('auth_token');
+        if (!authToken) {
+          return;
+        }
+
+        // Check if token is expired
+        if (isTokenExpired(authToken)) {
+          // Token has expired, log out user
+          try {
+            clearAllCaches();
+          } catch (error) {
+            console.error('Error clearing data on expiration:', error);
+          }
+          setIsAuthenticated(false);
+          setIsFreshLogin(false);
+          return;
+        }
+
+        // Decode token to check expiration time
+        const parts = authToken.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1]));
+          if (payload.exp) {
+            const currentTime = Math.floor(Date.now() / 1000);
+            const timeUntilExpiry = payload.exp - currentTime;
+            
+            // If token expires in less than 5 minutes, it's getting close
+            // The token will now last 24 hours, so this is just a safety check
+            if (timeUntilExpiry < 300) {
+              console.warn('Token will expire soon:', Math.floor(timeUntilExpiry / 60), 'minutes remaining');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking token expiration:', error);
+      }
+    };
+
+    // Check immediately
+    checkTokenExpiration();
+
+    // Check every 5 minutes
+    const interval = setInterval(checkTokenExpiration, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   // Listen for auth expiration events from API calls
   useEffect(() => {
@@ -178,6 +233,14 @@ const router = createBrowserRouter([
       {
         path: "/conversations",
         element: <ProtectedRoute><AuthenticatedLayout /></ProtectedRoute>
+      },
+      {
+        path: "/payment/success",
+        element: <ProtectedRoute><PaymentSuccess /></ProtectedRoute>
+      },
+      {
+        path: "/payment/failure",
+        element: <ProtectedRoute><PaymentFailure /></ProtectedRoute>
       },
       {
         path: "*",

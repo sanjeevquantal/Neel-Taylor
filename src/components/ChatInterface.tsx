@@ -20,9 +20,10 @@ import {
   Paperclip,
   X
 } from "lucide-react";
-import apiClient, { NetworkError, streamChat, fetchUserCredits } from "@/lib/api";
-import { writeCache, CACHE_KEYS } from "@/lib/cache";
+import apiClient, { NetworkError, streamChat, fetchUserCredits, CreditUsageResponse } from "@/lib/api";
+import { writeCache, readCache, CACHE_KEYS } from "@/lib/cache";
 import { UploadModal } from "@/components/UploadModal";
+import { PaymentModal } from "@/components/PaymentModal";
 
 // Parse metadata from message content
 interface ParsedMetadata {
@@ -333,6 +334,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const [conversationHasFile, setConversationHasFile] = useState(false);
   const [attachedUrl, setAttachedUrl] = useState<string>('');
   const [showPaperclipTooltip, setShowPaperclipTooltip] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [credits, setCredits] = useState<CreditUsageResponse | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -372,6 +375,28 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       setConversationTitle(null);
     }
   }, [initialConversationId]);
+
+  // Load credits on mount and when conversation changes
+  useEffect(() => {
+    const loadCredits = async () => {
+      try {
+        // Try cache first
+        const cachedCredits = readCache<CreditUsageResponse>(CACHE_KEYS.CREDITS);
+        if (cachedCredits) {
+          setCredits(cachedCredits);
+        }
+
+        // Fetch fresh data
+        const data = await fetchUserCredits();
+        setCredits(data);
+        writeCache(CACHE_KEYS.CREDITS, data);
+      } catch (err) {
+        console.error('Failed to fetch credits:', err);
+      }
+    };
+
+    loadCredits();
+  }, [conversationId]);
 
   // Load full conversation history when conversationId changes (from sidebar selection)
   useEffect(() => {
@@ -575,7 +600,10 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           // Fetch credits after chat completes (campaigns/credits may have been updated)
           if (conversationId) {
             fetchUserCredits()
-              .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+              .then(data => {
+                writeCache(CACHE_KEYS.CREDITS, data);
+                setCredits(data);
+              })
               .catch(err => {
                 console.error('Failed to fetch credits after chat:', err);
               });
@@ -689,6 +717,27 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
     if (!finalContent.trim() && !finalFile && !finalUrl) return;
 
+    // Check if this is a new conversation (no conversationId and no messages)
+    const isNewConversation = !conversationId && messages.length === 0;
+
+    // Always show payment modal before starting a new conversation
+    if (isNewConversation) {
+      // Load fresh credits if not available
+      if (!credits) {
+        try {
+          const freshCredits = await fetchUserCredits();
+          setCredits(freshCredits);
+          writeCache(CACHE_KEYS.CREDITS, freshCredits);
+        } catch (err) {
+          console.error('Failed to check credits:', err);
+        }
+      }
+      
+      // Always show payment modal for new conversations
+      setShowPaymentModal(true);
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
@@ -790,7 +839,10 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           // Fetch credits after chat completes (campaigns/credits may have been updated)
           if (conversationId) {
             fetchUserCredits()
-              .then(data => writeCache(CACHE_KEYS.CREDITS, data))
+              .then(data => {
+                writeCache(CACHE_KEYS.CREDITS, data);
+                setCredits(data);
+              })
               .catch(err => {
                 console.error('Failed to fetch credits after chat:', err);
               });
@@ -1234,6 +1286,50 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           </div> */}
         </div>
       </div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        open={showPaymentModal}
+        onOpenChange={(open) => {
+          setShowPaymentModal(open);
+          if (!open) {
+            // Refresh credits when modal closes
+            fetchUserCredits()
+              .then(data => {
+                setCredits(data);
+                writeCache(CACHE_KEYS.CREDITS, data);
+              })
+              .catch(err => {
+                console.error('Failed to refresh credits:', err);
+              });
+          }
+        }}
+        onPaymentComplete={async () => {
+          // Refresh credits after payment
+          try {
+            const freshCredits = await fetchUserCredits();
+            setCredits(freshCredits);
+            writeCache(CACHE_KEYS.CREDITS, freshCredits);
+            
+            // If user now has credits, allow them to proceed
+            if (freshCredits.credits_remaining > 0) {
+              setShowPaymentModal(false);
+              // Retry sending the message if there was one queued
+              const finalContent = input.trim();
+              const finalFile = uploadedFile;
+              const finalUrl = attachedUrl;
+              if (finalContent || finalFile || finalUrl) {
+                // Small delay to ensure state is updated
+                setTimeout(() => {
+                  sendMessage(finalContent, finalFile, finalUrl);
+                }, 100);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to refresh credits after payment:', err);
+          }
+        }}
+      />
     </div>
   );
 };
