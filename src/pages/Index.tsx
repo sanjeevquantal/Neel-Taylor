@@ -1080,6 +1080,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
         onTabChange={setActiveTab}
         onLogout={onLogout}
         onCollapsedChange={setIsSidebarCollapsed}
+        conversations={sidebarConversations}
         onSelectConversation={(id) => {
           setActiveConversationId(id);
           navigate(`/conversations/${id}`);

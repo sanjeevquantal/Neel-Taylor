@@ -12,8 +12,6 @@ import {
   Activity,
   ArrowUpRight,
   MessageSquare
-  // BarChart3,
-  // Plus
 } from "lucide-react";
 import apiClient, { NetworkError } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
