@@ -378,7 +378,6 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   // Load full conversation history when conversationId changes (from sidebar selection)
   useEffect(() => {
     const loadHistory = async (id: number) => {
-      setIsLoadingHistory(true);
       setIsInitialTyping(false);
       setIsTyping(false);
       try {
@@ -466,12 +465,14 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       return;
     }
 
-    const cachedMessages = loadMessagesFromStorage(conversationId);
-    if (cachedMessages.length) {
-      setMessages(cachedMessages);
-    } else {
-      setMessages([]);
-    }
+    // Clear messages and show loader immediately when switching conversations
+    setMessages([]);
+    setIsLoadingHistory(true);
+    setIsInitialTyping(false);
+    setIsTyping(false);
+
+    // Don't load cached messages when switching - show loader instead for better UX
+    // Cached messages will be loaded after the API call completes
 
     void loadHistory(conversationId);
   }, [conversationId]);
