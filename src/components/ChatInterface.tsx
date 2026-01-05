@@ -316,6 +316,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     setConversationTitle(null);
     setIsInitialTyping(false);
     setConversationHasFile(false); // Reset file upload flag for new chat
+    setConversationLeads([]); // Reset leads for new chat
     persistMessagesToStorage(null, []);
     onNewChat?.();
   };
@@ -333,6 +334,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const [conversationHasFile, setConversationHasFile] = useState(false);
   const [attachedUrl, setAttachedUrl] = useState<string>('');
   const [showPaperclipTooltip, setShowPaperclipTooltip] = useState(false);
+  const [conversationLeads, setConversationLeads] = useState<any[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -376,7 +378,6 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   // Load full conversation history when conversationId changes (from sidebar selection)
   useEffect(() => {
     const loadHistory = async (id: number) => {
-      setIsLoadingHistory(true);
       setIsInitialTyping(false);
       setIsTyping(false);
       try {
@@ -399,6 +400,20 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           hasFile: m?.has_file || m?.hasFile || false, // Check if backend stores this info
         }));
         setMessages(mapped);
+
+        // Extract leads from conversation data
+        if (data?.leads && Array.isArray(data.leads) && data.leads.length > 0) {
+          // Format leads to match the LeadListTable component format
+          const formattedLeads = data.leads.map((lead: any) => ({
+            name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed',
+            title: lead.job_title || '-',
+            email: lead.email || '',
+            linkedin: lead.linkedin_url || '',
+          }));
+          setConversationLeads(formattedLeads);
+        } else {
+          setConversationLeads([]);
+        }
 
         // Check if this conversation has had any file uploads
         // Look for hasFile property first, then fallback to content patterns
@@ -440,6 +455,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     if (!conversationId) {
       setMessages(loadMessagesFromStorage(null));
       setConversationTitle(null);
+      setConversationLeads([]);
       setIsLoadingHistory(false);
       return;
     }
@@ -449,15 +465,30 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       return;
     }
 
-    const cachedMessages = loadMessagesFromStorage(conversationId);
-    if (cachedMessages.length) {
-      setMessages(cachedMessages);
-    } else {
-      setMessages([]);
-    }
+    // Clear messages and show loader immediately when switching conversations
+    setMessages([]);
+    setIsLoadingHistory(true);
+    setIsInitialTyping(false);
+    setIsTyping(false);
+
+    // Don't load cached messages when switching - show loader instead for better UX
+    // Cached messages will be loaded after the API call completes
 
     void loadHistory(conversationId);
   }, [conversationId]);
+
+  const refreshTitle = async (id: number) => {
+    try {
+      const data = await apiClient.get<any>(`/api/conversations/${id}?load_messages=false`);
+      if (data?.title) {
+        setConversationTitle(data.title);
+        // Notify Index/Sidebar that a conversation has been updated (for title sync)
+        window.dispatchEvent(new CustomEvent('cache-invalidate', { detail: { type: 'conversations' } }));
+      }
+    } catch (err) {
+      console.error('Failed to refresh title:', err);
+    }
+  };
 
   const personas = [
     { id: 'cto', label: 'Chief Technology Officer', description: 'Tech-focused, efficiency-driven' },
@@ -485,6 +516,8 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       skipNextHistoryLoadRef.current = true;
       setConversationId(resolvedId);
       onConversationIdChange?.(resolvedId);
+      // Fetch title for the new conversation
+      void refreshTitle(resolvedId);
     }
   };
 
@@ -557,6 +590,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
             ));
           }
 
+          // Check if the response contains lead metadata and update conversationLeads
+          const { metadata } = parseMetadata(fullContent);
+          if (metadata && metadata.type === 'lead_list' && Array.isArray(metadata.data) && metadata.data.length > 0) {
+            setConversationLeads(metadata.data);
+          }
+
           // Fetch credits after chat completes (campaigns/credits may have been updated)
           if (conversationId) {
             fetchUserCredits()
@@ -564,6 +603,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               .catch(err => {
                 console.error('Failed to fetch credits after chat:', err);
               });
+
+            // Periodically refresh title in case it was updated on backend
+            // especially if it's currently the default title
+            if (!conversationTitle || conversationTitle === 'AI Campaign Creator') {
+              void refreshTitle(conversationId);
+            }
           }
         },
         onError: (error: Error) => {
@@ -773,6 +818,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
               .catch(err => {
                 console.error('Failed to fetch credits after chat:', err);
               });
+
+            // Periodically refresh title in case it was updated on backend
+            // especially if it's currently the default title
+            if (!conversationTitle || conversationTitle === 'AI Campaign Creator') {
+              void refreshTitle(conversationId);
+            }
           }
         },
         onError: (error: Error) => {
@@ -900,6 +951,13 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       {/* Messages - with bottom padding for fixed input; centered like ChatGPT */}
       <div ref={listRef} className="flex-1 overflow-y-auto p-4 pb-32">
         <div className="max-w-3xl mx-auto space-y-4">
+          {/* Display leads if available */}
+          {conversationLeads.length > 0 && (
+            <div className="mb-4">
+              <LeadListTable data={conversationLeads} />
+            </div>
+          )}
+          
           {/* Empty state when there are no messages */}
           {messages.length === 0 && !isLoadingHistory && !isInitialTyping && !isTyping && (
             <div className="flex flex-col items-center justify-center text-center py-16 px-6 select-none">
@@ -1175,7 +1233,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                       <Paperclip className="w-4 h-4" />
                     </Button>
                   </UploadModal>
-                  {showPaperclipTooltip && (
+                  {showPaperclipTooltip && (isTyping || conversationHasFile || isUploadingFile) && (
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-popover text-popover-foreground text-sm rounded-md border shadow-md z-[100] whitespace-nowrap">
                       {isTyping
                         ? "Please wait for AI to finish responding"
@@ -1183,9 +1241,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                           ? "A knowledge base is already attached to this conversation"
                           : isUploadingFile
                             ? "Uploading..."
-                            : uploadedFile
-                              ? "File ready to send"
-                              : "Upload file or link"}
+                            : null}
                       <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-popover"></div>
                     </div>
                   )}
