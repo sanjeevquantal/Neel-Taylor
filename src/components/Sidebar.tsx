@@ -91,7 +91,10 @@ export const Sidebar = React.forwardRef<SidebarRef, SidebarProps>((props, ref) =
       id: 'chat', 
       label: 'New Chat', 
       icon: MessageSquare, 
-      path: activeConversationId ? `/conversations/${activeConversationId}` : '/' 
+      // Always navigate to the root path for a truly "new" chat.
+      // Existing conversations can still be accessed via the Latest Conversations
+      // section or the All Conversations tab.
+      path: '/' 
     },
     { 
       id: 'conversations', 

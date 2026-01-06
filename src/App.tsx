@@ -76,6 +76,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem('campaigner-chat-display');
       // Clear sidebar caches for fresh start
       clearSidebarCaches();
+      // Reset fresh login redirect flag so Index can redirect once per login
+      localStorage.removeItem('campaigner-fresh-login-redirected');
       localStorage.setItem('campaigner-auth', 'true');
     } catch (error) {
       console.error('Error clearing chat data:', error);

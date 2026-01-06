@@ -136,6 +136,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
     }));
   });
   const [isLoadingSidebarConversations, setIsLoadingSidebarConversations] = useState(false);
+  const hasHandledFreshLoginRedirect = useRef(false);
 
   // Fetch sidebar conversations (simpler format for sidebar list)
   const fetchSidebarConversations = async (options?: { silent?: boolean }) => {
@@ -346,6 +347,24 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
       }
     }
   }, [freshLogin]);
+
+  // On first load after a fresh login, always send the user to a brand new chat.
+  // This ensures that even if they logged out from `/conversations/:id`, the next
+  // login starts from a clean `/` route with no active conversation selected.
+  // We persist a flag in localStorage so this redirect only happens once per login,
+  // even if the Index route unmounts/remounts.
+  useEffect(() => {
+    if (!freshLogin) return;
+
+    const hasRedirected = localStorage.getItem('campaigner-fresh-login-redirected') === 'true';
+
+    if (!hasRedirected) {
+      localStorage.setItem('campaigner-fresh-login-redirected', 'true');
+      navigate('/', { replace: true });
+      setActiveTab('chat');
+      setActiveConversationId(null);
+    }
+  }, [freshLogin, navigate]);
 
   // Sync URL param conversation id into local state
   useEffect(() => {

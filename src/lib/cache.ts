@@ -97,6 +97,15 @@ export const readCache = <T,>(baseKey: string, userId?: number): T | undefined =
  */
 export const writeCache = <T,>(baseKey: string, value: T, userId?: number): void => {
   try {
+    // If there is no auth token, the user is effectively logged out.
+    // In that state we should never write to cache, otherwise background
+    // requests that race with logout can recreate sidebar caches like
+    // "campaigner-sidebar-conversations-1" after they've been cleared.
+    const authToken = localStorage.getItem('auth_token');
+    if (!authToken) {
+      return;
+    }
+
     const key = getUserCacheKey(baseKey, userId);
     const uid = userId ?? getUserId();
     const cached: CachedData<T> = {
@@ -172,22 +181,12 @@ export const clearAllCaches = (userId?: number): void => {
     ];
     fixedKeys.forEach(key => localStorage.removeItem(key));
 
-    // 3. Clear keys with specific prefixes (conversations, etc.)
-    const prefixes = ['conversation-', 'campaigner-', 'chat-history-'];
-    const keysToRemove: string[] = [];
+    // 3. As a final safety net, clear *all* localStorage for this origin.
+    // This guarantees that every key (including any future ones we might add)
+    // is removed on logout, so the app always starts from a clean slate.
+    localStorage.clear();
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) {
-        if (prefixes.some(p => key.startsWith(p))) {
-          keysToRemove.push(key);
-        }
-      }
-    }
-
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-
-    console.log('All account data and caches cleared successfully');
+    console.log('All account data, caches, and localStorage cleared successfully');
   } catch (err) {
     console.error('Failed to clear all caches', err);
   }
