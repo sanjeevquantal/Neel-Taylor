@@ -252,8 +252,12 @@ interface ChatInterfaceProps {
 
 const CHAT_STORAGE_KEY = 'campaigner-chat-cache';
 const DRAFT_STORAGE_KEY = 'draft';
+const INPUT_STORAGE_KEY = 'campaigner-chat-inputs';
 
 const getConversationStorageKey = (id: number | null) =>
+  id ? `conversation-${id}` : DRAFT_STORAGE_KEY;
+
+const getConversationInputKey = (id: number | null) =>
   id ? `conversation-${id}` : DRAFT_STORAGE_KEY;
 
 const readChatStorage = (): Record<string, PersistedMessage[]> => {
@@ -272,6 +276,44 @@ const writeChatStorage = (store: Record<string, PersistedMessage[]>) => {
     localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(store));
   } catch (err) {
     console.error('Failed to write chat storage', err);
+  }
+};
+
+const readInputStorage = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(INPUT_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('Failed to read input storage', err);
+    return {};
+  }
+};
+
+const writeInputStorage = (store: Record<string, string>) => {
+  try {
+    localStorage.setItem(INPUT_STORAGE_KEY, JSON.stringify(store));
+  } catch (err) {
+    console.error('Failed to write input storage', err);
+  }
+};
+
+// Move any draft input (typed before a conversation ID exists) onto the
+// newly-created conversation key so that URL changes/remounts don't lose it.
+const migrateDraftInputToConversationStorage = (newConversationId: number) => {
+  try {
+    const store = readInputStorage();
+    const draftKey = getConversationInputKey(null); // "draft"
+    const draftValue = store[draftKey];
+
+    if (typeof draftValue === 'string' && draftValue.trim().length > 0) {
+      const newKey = getConversationInputKey(newConversationId);
+      store[newKey] = draftValue;
+      delete store[draftKey];
+      writeInputStorage(store);
+    }
+  } catch (err) {
+    console.error('Failed to migrate draft input to conversation storage', err);
   }
 };
 
@@ -317,6 +359,15 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
     setIsInitialTyping(false);
     setConversationHasFile(false); // Reset file upload flag for new chat
     setConversationLeads([]); // Reset leads for new chat
+    // Clear stored draft input for the current conversation and draft key
+    try {
+      const store = readInputStorage();
+      delete store[getConversationInputKey(conversationId)];
+      delete store[getConversationInputKey(null)];
+      writeInputStorage(store);
+    } catch (err) {
+      console.error('Failed to clear input storage for new chat', err);
+    }
     persistMessagesToStorage(null, []);
     onNewChat?.();
   };
@@ -324,7 +375,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const [messages, setMessages] = useState<Message[]>(() => loadMessagesFromStorage(initialConversationId ?? null));
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId);
   const [conversationTitle, setConversationTitle] = useState<string | null>(null);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState<string>(() => {
+    // Initialize input from stored drafts so remounts don't lose text
+    const store = readInputStorage();
+    const key = getConversationInputKey(initialConversationId ?? null);
+    return store[key] ?? '';
+  });
   const [isTyping, setIsTyping] = useState(false);
   const [isInitialTyping, setIsInitialTyping] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -341,6 +397,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const skipNextHistoryLoadRef = useRef(false);
   const justCreatedConversationIdRef = useRef<number | null>(null);
+  const hasLoadedInputDraftRef = useRef(false);
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -366,6 +423,48 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   useEffect(() => {
     persistMessagesToStorage(conversationId ?? null, messages);
   }, [conversationId, messages]);
+
+  // Persist input drafts whenever input or conversationId changes
+  useEffect(() => {
+    try {
+      const store = readInputStorage();
+      const key = getConversationInputKey(conversationId ?? null);
+      if (input && input.trim().length > 0) {
+        store[key] = input;
+      } else {
+        delete store[key];
+      }
+      writeInputStorage(store);
+    } catch (err) {
+      console.error('Failed to persist input draft', err);
+    }
+  }, [input, conversationId]);
+
+  // When conversationId changes (e.g., navigation), load any stored draft for it.
+  // But never clobber non-empty input the user is currently typing.
+  useEffect(() => {
+    try {
+      // If we've already loaded a draft once and the user has started typing,
+      // don't overwrite their current input when the conversationId updates
+      // (this can happen when a new conversation ID is assigned after first message).
+      if (hasLoadedInputDraftRef.current && input && input.trim().length > 0) {
+        return;
+      }
+
+      const store = readInputStorage();
+      const key = getConversationInputKey(conversationId ?? null);
+      const stored = store[key];
+      if (typeof stored === 'string') {
+        setInput(stored);
+      } else if (!conversationId) {
+        // For brand new chat with no stored draft, ensure input is at least empty string
+        setInput((prev) => prev ?? '');
+      }
+      hasLoadedInputDraftRef.current = true;
+    } catch (err) {
+      console.error('Failed to load input draft for conversation', err);
+    }
+  }, [conversationId]);
 
   // Sync external initial conversation id into local state
   useEffect(() => {
@@ -537,8 +636,6 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
         // Remove single quotes from the beginning and end of the title
         const cleanedTitle = title.trim().replace(/^'|'$/g, '');
         setConversationTitle(cleanedTitle);
-        // Notify Index/Sidebar that a conversation has been updated (for title sync)
-        window.dispatchEvent(new CustomEvent('cache-invalidate', { detail: { type: 'conversations' } }));
       } else {
         setConversationTitle(null);
       }
@@ -570,6 +667,10 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
     if (resolvedId) {
       migrateDraftToConversationStorage(resolvedId);
+      // Also migrate any in-progress input that was stored under the draft key
+      // so that when the URL changes to /conversations/:id and the chat
+      // component remounts, the user's partially-typed next message is restored.
+      migrateDraftInputToConversationStorage(resolvedId);
       // Set skip flag and track this conversation as just created
       // This prevents history reload when navigation happens after first message
       skipNextHistoryLoadRef.current = true;
