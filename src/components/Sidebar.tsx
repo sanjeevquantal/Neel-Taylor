@@ -243,7 +243,7 @@ export const Sidebar = React.forwardRef<SidebarRef, SidebarProps>((props, ref) =
                     <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">
-                        {conversation.title || `Conversation ${conversation.id}`}
+                        {conversation.title ? conversation.title.replace(/^'|'$/g, '') : `Conversation ${conversation.id}`}
                       </div>
                       {conversation.last_message && (
                         <div className="text-xs text-muted-foreground truncate mt-0.5">

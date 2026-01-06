@@ -340,6 +340,7 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
   const listRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const skipNextHistoryLoadRef = useRef(false);
+  const justCreatedConversationIdRef = useRef<number | null>(null);
 
   // Auto-adjust textarea height
   useEffect(() => {
@@ -368,12 +369,23 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
   // Sync external initial conversation id into local state
   useEffect(() => {
-    setConversationId(initialConversationId ?? null);
+    // Only update if the value actually changed to avoid unnecessary re-renders
+    // and prevent clearing messages when navigation happens after first message
+    if (initialConversationId !== conversationId) {
+      // If we're syncing a conversation we just created, skip history load
+      if (skipNextHistoryLoadRef.current && initialConversationId) {
+        // The skip flag is already set, just update the ID without triggering history load
+        setConversationId(initialConversationId);
+        skipNextHistoryLoadRef.current = false; // Reset after use
+      } else {
+        setConversationId(initialConversationId ?? null);
+      }
+    }
     // Reset title when conversation ID changes externally
     if (!initialConversationId) {
       setConversationTitle(null);
     }
-  }, [initialConversationId]);
+  }, [initialConversationId, conversationId]);
 
   // Load full conversation history when conversationId changes (from sidebar selection)
   useEffect(() => {
@@ -383,8 +395,12 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       try {
         const data = await apiClient.get<any>(`/api/conversations/${id}`);
         // Extract conversation title from API response
-        if (data?.title) {
-          setConversationTitle(data.title);
+        // Handle both null and empty string cases, and strip single quotes
+        const title = data?.title;
+        if (title && title.trim() !== '') {
+          // Remove single quotes from the beginning and end of the title
+          const cleanedTitle = title.trim().replace(/^'|'$/g, '');
+          setConversationTitle(cleanedTitle);
         } else {
           setConversationTitle(null);
         }
@@ -399,7 +415,22 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
           timestamp: new Date(m?.created_at ?? m?.timestamp ?? Date.now()),
           hasFile: m?.has_file || m?.hasFile || false, // Check if backend stores this info
         }));
-        setMessages(mapped);
+        // Update messages from server, but preserve existing messages if we already have them
+        // This prevents the refresh issue when navigation happens after first message
+        setMessages(prev => {
+          // If we already have messages and the mapped messages are the same or fewer,
+          // it means we're reloading the same conversation - preserve existing messages
+          // to prevent the page refresh issue after first message
+          if (prev.length > 0 && mapped.length <= prev.length) {
+            // Check if the last message content matches - if so, we're reloading the same conversation
+            const lastPrev = prev[prev.length - 1];
+            const lastMapped = mapped[mapped.length - 1];
+            if (lastPrev && lastMapped && lastPrev.content === lastMapped.content) {
+              return prev; // Same conversation, preserve existing messages
+            }
+          }
+          return mapped;
+        });
 
         // Extract leads from conversation data
         if (data?.leads && Array.isArray(data.leads) && data.leads.length > 0) {
@@ -465,9 +496,29 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
       return;
     }
 
-    // Clear messages and show loader immediately when switching conversations
-    setMessages([]);
-    setIsLoadingHistory(true);
+    // If we're loading history for a conversation we just created and we already have messages,
+    // skip the history load to prevent clearing messages after first message
+    // But still load the title to ensure it's displayed correctly
+    if (justCreatedConversationIdRef.current === conversationId && messages.length > 0) {
+      // Still load the title even if we skip loading messages
+      void refreshTitle(conversationId);
+      return;
+    }
+
+    // Don't clear messages if we already have messages - this prevents the refresh issue
+    // after first message when navigation happens. We'll still load history to sync
+    // but won't clear existing messages if they're already displayed.
+    const hasMessages = messages.length > 0;
+    
+    // Only clear messages and show loader when we don't have any messages yet
+    // This prevents clearing messages after first message when navigation occurs
+    if (!hasMessages) {
+      setMessages([]);
+      setIsLoadingHistory(true);
+    } else {
+      // If we have messages, still load history in background to sync, but don't show loader
+      setIsLoadingHistory(false);
+    }
     setIsInitialTyping(false);
     setIsTyping(false);
 
@@ -479,11 +530,17 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
   const refreshTitle = async (id: number) => {
     try {
-      const data = await apiClient.get<any>(`/api/conversations/${id}?load_messages=false`);
-      if (data?.title) {
-        setConversationTitle(data.title);
+      const data = await apiClient.get<any>(`/api/conversations/${id}`);
+      // Handle both null and empty string cases, and strip single quotes
+      const title = data?.title;
+      if (title && title.trim() !== '') {
+        // Remove single quotes from the beginning and end of the title
+        const cleanedTitle = title.trim().replace(/^'|'$/g, '');
+        setConversationTitle(cleanedTitle);
         // Notify Index/Sidebar that a conversation has been updated (for title sync)
         window.dispatchEvent(new CustomEvent('cache-invalidate', { detail: { type: 'conversations' } }));
+      } else {
+        setConversationTitle(null);
       }
     } catch (err) {
       console.error('Failed to refresh title:', err);
@@ -513,11 +570,20 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
 
     if (resolvedId) {
       migrateDraftToConversationStorage(resolvedId);
+      // Set skip flag and track this conversation as just created
+      // This prevents history reload when navigation happens after first message
       skipNextHistoryLoadRef.current = true;
+      justCreatedConversationIdRef.current = resolvedId;
       setConversationId(resolvedId);
+      // Call onConversationIdChange AFTER setting the skip flag
+      // This will trigger navigation, but skipNextHistoryLoadRef will prevent history reload
       onConversationIdChange?.(resolvedId);
       // Fetch title for the new conversation
       void refreshTitle(resolvedId);
+      // Clear the just-created flag after a short delay to allow navigation to complete
+      setTimeout(() => {
+        justCreatedConversationIdRef.current = null;
+      }, 1000);
     }
   };
 
@@ -604,11 +670,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                 console.error('Failed to fetch credits after chat:', err);
               });
 
-            // Periodically refresh title in case it was updated on backend
-            // especially if it's currently the default title
-            if (!conversationTitle || conversationTitle === 'AI Campaign Creator') {
-              void refreshTitle(conversationId);
-            }
+            // Always refresh title after message is sent to ensure we have the latest title
+            // This is especially important for new conversations where title is generated after 2nd/3rd message
+            void refreshTitle(conversationId);
           }
         },
         onError: (error: Error) => {
@@ -819,11 +883,9 @@ export const ChatInterface = ({ freshLogin = false, isSidebarCollapsed = false, 
                 console.error('Failed to fetch credits after chat:', err);
               });
 
-            // Periodically refresh title in case it was updated on backend
-            // especially if it's currently the default title
-            if (!conversationTitle || conversationTitle === 'AI Campaign Creator') {
-              void refreshTitle(conversationId);
-            }
+            // Always refresh title after message is sent to ensure we have the latest title
+            // This is especially important for new conversations where title is generated after 2nd/3rd message
+            void refreshTitle(conversationId);
           }
         },
         onError: (error: Error) => {

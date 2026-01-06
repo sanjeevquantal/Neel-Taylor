@@ -948,7 +948,7 @@ const Index = ({ onLogout, freshLogin }: IndexProps) => {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="font-semibold text-lg">{conversation.title || `Conversation #${conversation.id}`}</h3>
+                          <h3 className="font-semibold text-lg">{conversation.title ? conversation.title.replace(/^'|'$/g, '') : `Conversation #${conversation.id}`}</h3>
                           <span className={`text-xs px-2 py-1 rounded-full font-medium ${getConversationStatusColor(conversation.status)}`}>
                             {conversation.status || 'draft'}
                           </span>

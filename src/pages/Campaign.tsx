@@ -1,4 +1,4 @@
-import { useState, useRef, Suspense } from "react";
+import { useState, useRef, Suspense, useEffect } from "react";
 import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
 import { Sidebar, SidebarRef } from "@/components/Sidebar";
 import { Card } from "@/components/ui/card";
@@ -8,12 +8,89 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { CampaignLoaderData } from "@/lib/loaders";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
+import apiClient from "@/lib/api";
+import { readCache, writeCache, CACHE_KEYS } from "@/lib/cache";
 
 const CampaignPage = () => {
   const params = useParams();
   const navigate = useNavigate();
   const sidebarRef = useRef<SidebarRef>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  
+  // Sidebar conversations state (simpler format for sidebar list)
+  const [sidebarConversations, setSidebarConversations] = useState<Array<{
+    id: number;
+    title?: string | null;
+    last_message?: string | null;
+    updated_at?: string | null;
+    created_at?: string | null;
+  }>>(() => {
+    const cached = readCache<Array<any>>(CACHE_KEYS.CONVERSATIONS);
+    if (!cached) return [];
+    return cached.map((item: any) => ({
+      id: item.id,
+      title: item.title ?? item.name ?? null,
+      last_message: item.last_message ?? item.lastMessage ?? null,
+      updated_at: item.updated_at ?? item.updatedAt ?? null,
+      created_at: item.created_at ?? item.createdAt ?? null,
+    }));
+  });
+  const [isLoadingSidebarConversations, setIsLoadingSidebarConversations] = useState(false);
+
+  // Fetch sidebar conversations (simpler format for sidebar list)
+  const fetchSidebarConversations = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setIsLoadingSidebarConversations(true);
+    try {
+      const data = await apiClient.get<any>(`/api/conversations/?load_messages=false`);
+      let items: Array<{
+        id: number;
+        title?: string | null;
+        last_message?: string | null;
+        updated_at?: string | null;
+        created_at?: string | null;
+      }> = [];
+
+      if (Array.isArray(data)) {
+        items = data.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title ?? it?.name ?? null,
+          last_message: it?.last_message ?? it?.lastMessage ?? null,
+          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
+          created_at: it?.created_at ?? it?.createdAt ?? null,
+        }));
+      } else if (data && Array.isArray((data as any).items)) {
+        items = (data as any).items.map((it: any, idx: number) => ({
+          id: Number(it?.id ?? idx + 1),
+          title: it?.title ?? it?.name ?? null,
+          last_message: it?.last_message ?? it?.lastMessage ?? null,
+          updated_at: it?.updated_at ?? it?.updatedAt ?? null,
+          created_at: it?.created_at ?? it?.createdAt ?? null,
+        }));
+      } else if (typeof data === 'string') {
+        items = [{ id: 1, title: data, last_message: null, updated_at: null, created_at: null }];
+      }
+
+      setSidebarConversations(items);
+      writeCache(CACHE_KEYS.CONVERSATIONS, items);
+    } catch (err: any) {
+      console.error('Failed to load sidebar conversations:', err);
+    } finally {
+      if (!silent) setIsLoadingSidebarConversations(false);
+    }
+  };
+
+  // Fetch sidebar conversations on mount
+  useEffect(() => {
+    fetchSidebarConversations();
+  }, []);
+
+  // Expose refresh function via ref
+  useEffect(() => {
+    if (sidebarRef.current) {
+      (sidebarRef.current as any).refreshConversations = fetchSidebarConversations;
+    }
+  }, []);
   
   // Get deferred data from loader
   const { campaign } = useLoaderData() as { campaign: Promise<CampaignLoaderData> };
@@ -32,6 +109,7 @@ const CampaignPage = () => {
           navigate('/');
         }}
         onCollapsedChange={setIsSidebarCollapsed}
+        conversations={sidebarConversations}
         onSelectConversation={(id) => {
           navigate(`/conversations/${id}`);
         }}
